@@ -37,6 +37,26 @@ export interface PageElement {
   chars: number
 }
 
+// plan 249: an element of the page copy a person can click (numbered in the copy as data-cinqo-e), with the selector the analysis verified for it.
+export interface ViewElement {
+  n: number
+  selector: string
+  unique: boolean
+  tag: string
+  chars: number
+  text: string
+  // 'datetime' when the element carries a machine date.
+  attribute?: string
+}
+
+// The safe copy of the page the Browser tool kept for the screen to show.
+export interface PageCopy {
+  id: string
+  bytes: number
+  createdAt: string
+  truncated?: boolean
+}
+
 export interface PickSample {
   jobId: string
   title: string
@@ -136,6 +156,10 @@ export interface PickCandidates {
   pageTextChars: number
   truncated: boolean
   current: CurrentInstructions
+  // plan 249: only when the page copy was asked for. A copy that could not be made says why; there are then no view elements.
+  snapshot?: PageCopy
+  snapshotError?: string
+  viewElements?: ViewElement[] | null
 }
 
 export interface PickPreview {
@@ -210,13 +234,19 @@ export function normalizeCandidates(p: RawCandidates): PickCandidates {
 }
 
 // Load a sample page and the suggestions for it: a saved job of the link (jobId), an address on its site (url), or neither (the oldest
-// saved job).
+// saved job). With snapshot the Browser tool also keeps a safe copy of the page for the screen to show (plan 249); it is deleted when the picker closes.
 export function loadPickCandidates(
   portalLinkId: string,
   sample: { jobId?: string; url?: string },
   signal?: AbortSignal,
+  options?: { snapshot?: boolean },
 ): Promise<PickCandidates> {
-  return post<RawCandidates>('candidates', { portalLinkId, ...sample }, 'load the page', signal).then(normalizeCandidates)
+  return post<RawCandidates>(
+    'candidates',
+    { portalLinkId, ...sample, ...(options?.snapshot ? { snapshot: true } : {}) },
+    'load the page',
+    signal,
+  ).then(normalizeCandidates)
 }
 
 // The instruction text the choices make, or why they are not valid yet. Pure on the backend: nothing is loaded or stored.

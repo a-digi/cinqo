@@ -50,8 +50,8 @@ export function PageFrame({
   markClasses: string[]
   // Scroll the first of these numbers that is in the picture into view; seq makes asking twice for the same ones work.
   reveal: { numbers: number[]; seq: number } | null
-  // The numbers that are in the picture.
-  onReady: (present: Set<number>) => void
+  // The numbers that are in the picture, and the copy's document (an owner may ask it things; it belongs to the iframe's window).
+  onReady: (present: Set<number>, doc: Document) => void
   // What a click on this element is about ([] = nothing to ask). A click on a link never opens it, whatever this says.
   clickTargets: (target: Element, doc: Document) => string[]
   // What a selection is about ([] = nothing); the owner may act on it here (the Job list ticks the links as jobs).
@@ -120,7 +120,7 @@ export function PageFrame({
     }
     setFixedCount(fixed)
     wire(d)
-    onReady(new Set(Array.from(d.querySelectorAll(`[${attribute}]`), (e) => Number(e.getAttribute(attribute)))))
+    onReady(new Set(Array.from(d.querySelectorAll(`[${attribute}]`), (e) => Number(e.getAttribute(attribute)))), d)
     setLoaded((n) => n + 1)
   }
 

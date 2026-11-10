@@ -3,7 +3,11 @@ import type { PortalLink } from '../../api'
 import { DescriptionRuleEditor } from './DescriptionRuleEditor'
 import { VerifyPanel } from './VerifyPanel'
 import { WindowCheckPrompt } from '../WindowCheckPrompt'
-import { WINDOW_CHECK_CODE } from '../linkCrawl'
+import { DetailPageView } from './DetailPageView'
+import { FieldStrip } from './FieldStrip'
+import { TempFilesLine } from '../PageFrame/TempFilesLine'
+import { deleteSnapshot, WINDOW_CHECK_CODE } from '../linkCrawl'
+import { numberOfSelector, pickFromView, viewByNumber } from './fieldMarks'
 import {
   loadPickCandidates,
   PickError,
@@ -12,6 +16,7 @@ import {
   type PickField,
   type PickPreview,
   type Ranked,
+  type ViewElement,
 } from './jobDetailPick'
 import {
   canPreview,
@@ -256,8 +261,13 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
   const [previewError, setPreviewError] = useState('')
   // plan 198: a browser window opened for a check; the person is asked whether it was cleared
   const [windowCheck, setWindowCheck] = useState(false)
+  // plan 249: with a page to show, only the page is shown (large) over a strip of the five fields; the rows are one click away ("Show the fields").
+  const [fieldsShown, setFieldsShown] = useState(false)
+  // Scroll the page to the element of a pick made in the rows; seq makes asking twice for the same one work.
+  const [reveal, setReveal] = useState<{ numbers: number[]; seq: number } | null>(null)
   const loadSeq = useRef(0)
   const previewSeq = useRef(0)
+  const revealSeq = useRef(0)
 
   function load(choice: string, url: string) {
     const seq = ++loadSeq.current
@@ -265,7 +275,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
     setError('')
     setWindowCheck(false)
     const target = choice === 'url' ? { url: url.trim() } : choice === 'default' ? {} : { jobId: choice }
-    loadPickCandidates(link.id, target)
+    loadPickCandidates(link.id, target, undefined, { snapshot: true })
       .then((p) => {
         if (seq !== loadSeq.current) return
         setPage(p)
@@ -319,11 +329,123 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
     }
   }, [picks, rule, replaceTitle, page, link.id])
 
+  // plan 249: a page copy lives as long as the page it belongs to; a new load replaces it and closing or saving the picker removes it.
+  const snapshotId = page?.snapshot?.id ?? ''
+  useEffect(() => {
+    if (snapshotId === '') return
+    return () => {
+      void deleteSnapshot(snapshotId).catch(() => undefined)
+    }
+  }, [snapshotId])
+  const view: ViewElement[] = useMemo(() => page?.viewElements ?? [], [page])
+  const hasView = snapshotId !== '' && view.length > 0
+
   function setPick(field: PickField, p: Pick | null) {
     setPicks((prev) => ({ ...prev, [field]: p }))
+    // a pick made in the rows or the strip is shown on the page
+    const n = p && (p.source ?? '') === '' ? numberOfSelector(view, p.selector) : undefined
+    if (n !== undefined && hasView) {
+      revealSeq.current += 1
+      setReveal({ numbers: [n], seq: revealSeq.current })
+    }
+  }
+
+  // The person answered in the page for the element n: it becomes the pick of the field (the page is what they see, so the pick is what they pointed at), or what it is now is cleared.
+  function answerFromPage(n: number, field: PickField | null, now: PickField[]) {
+    if (field === null) {
+      setPicks((prev) => {
+        const next = { ...prev }
+        for (const f of now) if (!(f === 'description' && rule !== null)) next[f] = null
+        return next
+      })
+      return
+    }
+    const v = viewByNumber(view).get(n)
+    if (!v) return
+    setPicks((prev) => ({ ...prev, [field]: pickFromView(v) }))
+  }
+
+  // The instructions are saved: the modal stays open, but the picker folds away so only the saved state and its button are left, and everything of this round is dropped;
+  // its page copy goes with the page (the effect on the copy's id deletes the file).
+  function saved(yaml: string) {
+    setOpen(false)
+    setPage(null)
+    setPicks(NO_PICKS)
+    setRule(null)
+    setPreview(null)
+    setPreviewError('')
+    setFieldsShown(false)
+    setReveal(null)
+    onSaved(yaml)
   }
 
   const note = page ? lossyNote(page.current.lossy) : ''
+
+  // The description row (or its rule editor): one block, shown in step 3, or beside the page under "Show the fields".
+  function renderDescription(pg: PickCandidates) {
+    return (
+      <div className="space-y-2">
+        {rule === null ? (
+          <>
+            <FieldRow
+              key={`${pg.url}|description`}
+              field="description"
+              page={pg}
+              pick={picks.description}
+              required
+              onPick={(p) => {
+                setPick('description', p)
+              }}
+            />
+            {picks.description !== null && !isStructuredPick(picks.description) && furnitureNote(pg, picks.description.selector) !== '' && (
+              <p className="pl-1 text-amber-900" data-testid="job-detail-pick-furniture">
+                {furnitureNote(pg, picks.description.selector)}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 pl-1">
+              <button
+                type="button"
+                className={buttonClass}
+                onClick={() => {
+                  setRule(draftFromBox(picks.description?.selector ?? ''))
+                }}
+              >
+                Read the description with a rule
+              </button>
+              <span className="text-gray-600">Several boxes, things to leave out, headings, a longer limit than 5,000 characters.</span>
+              {statedDescription(pg) && (
+                <button
+                  type="button"
+                  className={buttonClass}
+                  data-testid="job-detail-pick-use-stated-description"
+                  onClick={() => {
+                    setRule(draftFromStatedDescription())
+                  }}
+                >
+                  Use the description the pg states
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <DescriptionRuleEditor
+            linkId={link.id}
+            page={pg}
+            draft={rule}
+            choices={toChoices(picks, rule, replaceTitle)}
+            sampleJobId={sample !== 'default' && sample !== 'url' ? sample : null}
+            onChange={setRule}
+            onUseBox={() => {
+              const first = rule.parts[0].include.trim()
+              if (first !== '' && picks.description === null)
+                setPick('description', { selector: first, attribute: '', value: '', from: 'stored' })
+              setRule(null)
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="text-sm text-gray-800" data-testid="job-detail-pick">
@@ -467,139 +589,136 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                 {page.current.yaml !== '' && page.current.choices && (
                   <p className="text-gray-700">This link already has job-detail instructions; the picks below start from them.</p>
                 )}
-                <p className="text-gray-600">
-                  Only the description is required. Leave any other field as &quot;Not on this page&quot;: a field the page does not show
-                  never stops you from saving.
-                </p>
-                <div className="space-y-2">
-                  {DATA_FIELDS.map((f) => (
-                    <div key={`${page.url}|${f}`} className="space-y-1">
-                      <FieldRow
-                        field={f}
-                        page={page}
-                        pick={picks[f]}
-                        required={false}
-                        onPick={(p) => {
-                          setPick(f, p)
+                {hasView && (
+                  <>
+                    <p className="text-gray-700" data-testid="job-detail-page-hint">
+                      Click or select the text of a field in the page and say what it is: the <strong>title</strong>, the company, the
+                      location, the posted date or the <strong>description</strong>. Only the description is required.
+                    </p>
+                    <FieldStrip page={page} view={view} picks={picks} rule={rule} onPick={setPick} />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        className={buttonClass}
+                        aria-expanded={fieldsShown}
+                        onClick={() => {
+                          setFieldsShown((v) => !v)
                         }}
-                      />
-                      {f === 'title' && picks.title !== null && (
-                        <label className="ml-1 flex items-start gap-2 text-gray-800" data-testid="job-detail-pick-replace-title">
-                          <input
-                            type="checkbox"
-                            checked={replaceTitle}
-                            onChange={(e) => {
-                              setReplaceTitle(e.target.checked)
-                            }}
-                            className="mt-0.5"
-                          />
-                          <span>
-                            Replace the job&apos;s title with this one when its page is crawled. Off: the title is only checked against the
-                            saved one.
-                            <span className="block text-gray-600">
-                              Use it when the listing&apos;s titles are poor. A later crawl of the listing may add the job again under its
-                              old title. Each change is written in the run log; jobs you added by hand keep their title.
-                            </span>
-                          </span>
-                        </label>
+                      >
+                        {fieldsShown ? 'Hide the fields' : 'Show the fields'}
+                      </button>
+                      <TempFilesLine open={open} snapshotId={snapshotId} />
+                    </div>
+                  </>
+                )}
+                <div
+                  className={hasView && fieldsShown ? 'grid gap-4 lg:grid-cols-2 lg:items-start' : ''}
+                  data-testid={hasView ? 'job-detail-fields-and-view' : undefined}
+                >
+                  {(!hasView || fieldsShown) && (
+                    <div className="min-w-0 space-y-3">
+                      <p className="text-gray-600">
+                        Only the description is required. Leave any other field as &quot;Not on this page&quot;: a field the page does not
+                        show never stops you from saving.
+                      </p>
+                      <div className="space-y-2">
+                        {DATA_FIELDS.map((f) => (
+                          <div key={`${page.url}|${f}`} className="space-y-1">
+                            <FieldRow
+                              field={f}
+                              page={page}
+                              pick={picks[f]}
+                              required={false}
+                              onPick={(p) => {
+                                setPick(f, p)
+                              }}
+                            />
+                            {f === 'title' && picks.title !== null && (
+                              <label className="ml-1 flex items-start gap-2 text-gray-800" data-testid="job-detail-pick-replace-title">
+                                <input
+                                  type="checkbox"
+                                  checked={replaceTitle}
+                                  onChange={(e) => {
+                                    setReplaceTitle(e.target.checked)
+                                  }}
+                                  className="mt-0.5"
+                                />
+                                <span>
+                                  Replace the job&apos;s title with this one when its page is crawled. Off: the title is only checked
+                                  against the saved one.
+                                  <span className="block text-gray-600">
+                                    Use it when the listing&apos;s titles are poor. A later crawl of the listing may add the job again under
+                                    its old title. Each change is written in the run log; jobs you added by hand keep their title.
+                                  </span>
+                                </span>
+                              </label>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {page.structuredHints.length > 0 && (
+                        <div className="rounded-xl border border-gray-200 bg-white p-3" data-testid="job-detail-pick-hints">
+                          <div className="font-medium">What the page itself says about the job</div>
+                          <ul className="mt-1 list-disc pl-5 text-gray-800">
+                            {page.structuredHints.map((h) => (
+                              <li key={`${h.source}|${h.field}|${h.value}`}>
+                                {FIELD_NAMES[h.field]}: <span className="font-medium">{shortValue(h.value, 120)}</span>{' '}
+                                <span className="text-gray-500">({h.reason})</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="mt-1 text-gray-600">
+                            {page.structuredSupported
+                              ? 'Pick them in the rows above: they are read from the page’s own data, which survives a redesign of the page.'
+                              : 'Update the Browser tool to read these directly; until then use them to check your picks.'}
+                          </p>
+                        </div>
+                      )}
+                      {hasView && (
+                        <div className="space-y-2 border-t border-gray-200 pt-3" data-testid="job-detail-description-box">
+                          <div className="font-semibold text-gray-900">The description</div>
+                          {renderDescription(page)}
+                        </div>
                       )}
                     </div>
-                  ))}
-                </div>
-
-                {page.structuredHints.length > 0 && (
-                  <div className="rounded-xl border border-gray-200 bg-white p-3" data-testid="job-detail-pick-hints">
-                    <div className="font-medium">What the page itself says about the job</div>
-                    <ul className="mt-1 list-disc pl-5 text-gray-800">
-                      {page.structuredHints.map((h) => (
-                        <li key={`${h.source}|${h.field}|${h.value}`}>
-                          {FIELD_NAMES[h.field]}: <span className="font-medium">{shortValue(h.value, 120)}</span>{' '}
-                          <span className="text-gray-500">({h.reason})</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1 text-gray-600">
-                      {page.structuredSupported
-                        ? 'Pick them in the rows above: they are read from the page’s own data, which survives a redesign of the page.'
-                        : 'Update the Browser tool to read these directly; until then use them to check your picks.'}
-                    </p>
-                  </div>
-                )}
-              </InstructionSection>
-
-              <InstructionSection
-                number={3}
-                title="The description"
-                description="Pick the box that holds it, or read it with a rule: several boxes, things to leave out, headings, a longer limit."
-              >
-                <div className="space-y-2">
-                  {rule === null ? (
-                    <>
-                      <FieldRow
-                        key={`${page.url}|description`}
-                        field="description"
-                        page={page}
-                        pick={picks.description}
-                        required
-                        onPick={(p) => {
-                          setPick('description', p)
-                        }}
-                      />
-                      {picks.description !== null &&
-                        !isStructuredPick(picks.description) &&
-                        furnitureNote(page, picks.description.selector) !== '' && (
-                          <p className="pl-1 text-amber-900" data-testid="job-detail-pick-furniture">
-                            {furnitureNote(page, picks.description.selector)}
-                          </p>
-                        )}
-                      <div className="flex flex-wrap items-center gap-2 pl-1">
-                        <button
-                          type="button"
-                          className={buttonClass}
-                          onClick={() => {
-                            setRule(draftFromBox(picks.description?.selector ?? ''))
-                          }}
-                        >
-                          Read the description with a rule
-                        </button>
-                        <span className="text-gray-600">
-                          Several boxes, things to leave out, headings, a longer limit than 5,000 characters.
-                        </span>
-                        {statedDescription(page) && (
-                          <button
-                            type="button"
-                            className={buttonClass}
-                            data-testid="job-detail-pick-use-stated-description"
-                            onClick={() => {
-                              setRule(draftFromStatedDescription())
-                            }}
-                          >
-                            Use the description the page states
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <DescriptionRuleEditor
-                      linkId={link.id}
-                      page={page}
-                      draft={rule}
-                      choices={toChoices(picks, rule, replaceTitle)}
-                      sampleJobId={sample !== 'default' && sample !== 'url' ? sample : null}
-                      onChange={setRule}
-                      onUseBox={() => {
-                        const first = rule.parts[0].include.trim()
-                        if (first !== '' && picks.description === null)
-                          setPick('description', { selector: first, attribute: '', value: '', from: 'stored' })
-                        setRule(null)
-                      }}
+                  )}
+                  {hasView && (
+                    <DetailPageView
+                      snapshotId={snapshotId}
+                      view={view}
+                      picks={picks}
+                      rule={rule}
+                      large={!fieldsShown}
+                      reveal={reveal}
+                      onAnswer={answerFromPage}
                     />
                   )}
                 </div>
+                {!page.snapshot && page.snapshotError && (
+                  <p className="text-xs text-gray-500" data-testid="job-detail-page-unavailable">
+                    The page itself cannot be shown here: {page.snapshotError}. The rows work as before.
+                  </p>
+                )}
+                {page.snapshot && !hasView && page.snapshotError === undefined && (
+                  <p className="text-xs text-gray-500" data-testid="job-detail-page-unavailable">
+                    The page has no element to click. The rows work as before.
+                  </p>
+                )}
               </InstructionSection>
 
+              {!hasView && (
+                <InstructionSection
+                  number={3}
+                  title="The description"
+                  description="Pick the box that holds it, or read it with a rule: several boxes, things to leave out, headings, a longer limit."
+                >
+                  {renderDescription(page)}
+                </InstructionSection>
+              )}
+
               <InstructionSection
-                number={4}
+                number={hasView && !fieldsShown ? 3 : 4}
                 title="Check and save"
                 description="See the instructions these picks make, check them on sample jobs of this link, then save."
               >
@@ -627,7 +746,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                     page={page}
                     choices={toChoices(picks, rule, replaceTitle)}
                     previewValid={preview?.valid === true}
-                    onSaved={onSaved}
+                    onSaved={saved}
                   />
                 )}
               </InstructionSection>
