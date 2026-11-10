@@ -469,6 +469,16 @@ export function CameraIcon({ className }: { className?: string }) {
   )
 }
 
+// HelpIcon — a circle with a question mark: the Help link of a page (plan 239).
+export function HelpIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01" />
+    </Glyph>
+  )
+}
+
 // PencilIcon — marks "edit" on a card's hover actions (a small outline pencil, the same 20px grid as EyeIcon).
 export function PencilIcon() {
   return (
