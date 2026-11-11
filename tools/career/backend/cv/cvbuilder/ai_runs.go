@@ -37,7 +37,10 @@ var (
 	ErrCvAiRunFinished   = errors.New("this run is already finished")
 	ErrCvAiRunInProgress = errors.New("an AI run is already creating a CV for this target role")
 	ErrCvAiNothingSaved  = errors.New("the AI did not save a CV in this run")
-	errInvalidCvAiRun    = errors.New("invalid cv ai run")
+	// Attaching a CV a person-less driver made (plan 253): the CV must be one of the run's own target role, and belong to no other run.
+	ErrCvNotOfRun     = errors.New("this CV was not built from the run's target role")
+	ErrCvOfAnotherRun = errors.New("this CV already belongs to another run")
+	errInvalidCvAiRun = errors.New("invalid cv ai run")
 )
 
 type CvAiRun struct {
@@ -130,6 +133,74 @@ func FinishCvAiRun(id, status, errText string) error {
 		return err
 	}
 	return ErrCvAiRunFinished
+}
+
+// AttachCvToRun ties a CV that already exists to a generating run (plan 253). The model-driven path ties its CV in save_persona_cv; a run driven by code (a small
+// local model that is only asked which design to use) makes the CV through the same route as the wizard and then needs this second half only. The guards are those of
+// SaveCvAiDocument: the run exists, still works and has no CV; on top of them the CV must exist, must be built from the run's own target role (so a run cannot take
+// another role's CV) and must not belong to another run. One UPDATE decides a race: the run takes the CV only while it still works and has none.
+func AttachCvToRun(runID, cvDocumentID string) error {
+	var personaID, status string
+	var saved sql.NullString
+	switch err := db.CareerDB.QueryRow(`SELECT persona_id, status, cv_document_id FROM cv_ai_runs WHERE id = ?`, runID).Scan(&personaID, &status, &saved); {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrUnknownCvAiRun
+	case err != nil:
+		return err
+	}
+	if status != cvAiRunning {
+		return ErrCvAiRunFinished
+	}
+	if saved.Valid {
+		return ErrCvAiAlreadySaved
+	}
+	doc, err := GetCvDocument(cvDocumentID)
+	if err != nil {
+		return err
+	}
+	if doc.PersonaID != personaID {
+		return ErrCvNotOfRun
+	}
+	var other int
+	if err := db.CareerDB.QueryRow(`SELECT COUNT(*) FROM cv_ai_runs WHERE cv_document_id = ? AND id <> ?`, cvDocumentID, runID).Scan(&other); err != nil {
+		return err
+	}
+	if other > 0 {
+		return ErrCvOfAnotherRun
+	}
+	res, err := db.CareerDB.Exec(
+		`UPDATE cv_ai_runs SET cv_document_id = ? WHERE id = ? AND status = 'generating' AND cv_document_id IS NULL`, cvDocumentID, runID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return ErrCvAiAlreadySaved
+	}
+	return nil
+}
+
+type attachCvToRunRequest struct {
+	RunID        string `json:"runId"`
+	CvDocumentID string `json:"cvDocumentId"`
+}
+
+// CvAiRunAttachHandler handles POST cv-ai-runs/attach {runId, cvDocumentId}: 204 when the CV is now the run's, 400 for a missing field, 404 for an unknown run or CV,
+// 409 when the run is finished or already has a CV, or the CV is another role's or another run's.
+func CvAiRunAttachHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body attachCvToRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RunID == "" || body.CvDocumentID == "" {
+		http.Error(w, "runId and cvDocumentId are required", http.StatusBadRequest)
+		return
+	}
+	if err := AttachCvToRun(body.RunID, body.CvDocumentID); err != nil {
+		writeCvAiRunError(w, "attach the CV to the run", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListCvAiRuns returns a persona's runs, newest first. Stale runs are ended first.
@@ -256,7 +327,9 @@ func writeCvAiRunError(w http.ResponseWriter, action string, err error) {
 		http.Error(w, "unknown target role id", http.StatusNotFound)
 	case errors.Is(err, ErrUnknownCvAiRun):
 		http.Error(w, "unknown run id", http.StatusNotFound)
-	case errors.Is(err, ErrCvAiRunFinished), errors.Is(err, ErrCvAiRunInProgress):
+	case errors.Is(err, ErrUnknownCvDocument):
+		http.Error(w, "unknown cv document id", http.StatusNotFound)
+	case errors.Is(err, ErrCvAiRunFinished), errors.Is(err, ErrCvAiRunInProgress), errors.Is(err, ErrCvAiAlreadySaved), errors.Is(err, ErrCvNotOfRun), errors.Is(err, ErrCvOfAnotherRun):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrCvAiNothingSaved), errors.Is(err, errInvalidCvAiRun):
 		http.Error(w, err.Error(), http.StatusBadRequest)

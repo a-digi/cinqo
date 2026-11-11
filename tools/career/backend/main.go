@@ -354,6 +354,7 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-documents/export", cvbuilder.ExportHandler)
 	http.HandleFunc("/cv-documents/personas", cvbuilder.PersonaLinksHandler)
 	http.HandleFunc("/cv-ai-runs", cvbuilder.CvAiRunsHandler)
+	http.HandleFunc("/cv-ai-runs/attach", cvbuilder.CvAiRunAttachHandler)
 	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
 
 	// autodiscovery.CaptureTokenMiddleware wraps the entire mux here,

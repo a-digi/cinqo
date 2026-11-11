@@ -871,6 +871,11 @@
       "required_scope": "tool:career:cv_documents"
     },
     {
+      "method": "POST",
+      "path_suffix": "cv-ai-runs/attach",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
       "method": "PUT",
       "path_suffix": "cv-documents/personas",
       "required_scope": "tool:career:cv_documents"
