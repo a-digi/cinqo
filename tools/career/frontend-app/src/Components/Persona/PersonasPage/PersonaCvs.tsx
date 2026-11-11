@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CvDocument, CvTemplate } from '../../../api'
 import type { AiChoice } from '../../../Cinqo/Platform/aiChoice'
+import type { Platform } from '../../../Cinqo/Platform/platformRepository'
 import { CreateCvWithAi } from '../../../CvAi/CreateCvWithAi'
 import { failedRunToShow, hasRunningCvRun, openRunChat } from '../../../CvAi/cvAiRules'
 import { CvAiChatsModal } from '../../../CvAi/CvAiChatsModal'
@@ -21,6 +22,7 @@ export function PersonaCvs({
   docs,
   templates,
   ai,
+  platforms,
   onCvsChanged,
 }: {
   personaId: string
@@ -28,6 +30,8 @@ export function PersonaCvs({
   docs: CvDocument[]
   templates: CvTemplate[]
   ai: AiChoice
+  // The usable AI platforms, for the choice in the "Create CV with AI" dialog (plan 252).
+  platforms: Platform[]
   // Called when an AI run for this persona ended, so the page reads the CVs again.
   onCvsChanged: () => void
 }) {
@@ -142,6 +146,7 @@ export function PersonaCvs({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <CreateCvWithAi
           ai={ai}
+          platforms={platforms}
           personaName={personaName}
           disabledReason={
             !ai.platform
@@ -150,7 +155,7 @@ export function PersonaCvs({
                 ? 'The AI is already creating a CV for this target role.'
                 : ''
           }
-          onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}
+          onStart={(focus, choice) => aiRuns.start({ id: personaId, name: personaName }, focus, choice)}
         />
         <button
           type="button"

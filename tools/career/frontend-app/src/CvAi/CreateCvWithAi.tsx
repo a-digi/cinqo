@@ -1,43 +1,55 @@
 import { useState } from 'react'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
+import { resolveAiOverride, type AiOverride } from '../Cinqo/Platform/aiOverride'
+import type { Platform } from '../Cinqo/Platform/platformRepository'
 import { SparkleIcon } from '../Shared/Icons/icons'
 import { inputClass } from '../Shared/inputClass'
 import { Modal } from '../Shared/Modal/Modal'
 import { SETTINGS_PATH } from '../paths'
+import { CvAiPicker } from './CvAiPicker'
 
 // The "Create CV with AI" button and its dialog (step 115): the optional note on what the CV is for,
 // the AI that will be used, and one line about the data going to it. The button says why it is
 // disabled. The manual "New CV" next to it is untouched.
+// Plan 252: the dialog starts from the Career AI settings (`ai`) and lets the person pick another platform and model for this run only (from `platforms`, the
+// usable ones); the pick is not saved and not remembered, and onStart gets the AI in effect. With no usable platform there is no picker (and no AI to start with).
 export function CreateCvWithAi({
   disabledReason,
   ai,
+  platforms,
   personaName,
   onStart,
 }: {
   // Empty when the button can be used.
   disabledReason: string
   ai: AiChoice
+  platforms: Platform[]
   personaName: string
-  onStart: (focus: string) => Promise<void>
+  onStart: (focus: string, choice: AiChoice) => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [focus, setFocus] = useState('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const [override, setOverride] = useState<AiOverride | null>(null)
+  const usable = platforms
+  const choice = resolveAiOverride({ platform: ai.platform, model: ai.model }, usable, override)
 
   function close() {
     if (starting) return
     setOpen(false)
     setError('')
+    setOverride(null)
   }
 
   function start() {
     setError('')
     setStarting(true)
-    onStart(focus)
+    onStart(focus, { platform: choice.platform, model: choice.model, source: ai.source })
       .then(() => {
         setOpen(false)
         setFocus('')
+        setOverride(null)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -47,7 +59,7 @@ export function CreateCvWithAi({
       })
   }
 
-  const aiText = ai.platform ? `${ai.platform.name}${ai.model ? ` · ${ai.model}` : ''}` : ''
+  const aiText = choice.platform ? `${choice.platform.name}${choice.model ? ` · ${choice.model}` : ''}` : ''
 
   return (
     <>
@@ -83,18 +95,39 @@ export function CreateCvWithAi({
             className={`mt-1 ${inputClass}`}
           />
         </label>
+        {usable.length > 0 && (
+          <>
+            <p className="mt-4 text-xs font-medium text-gray-500">AI for this CV</p>
+            <CvAiPicker
+              choice={choice}
+              settings={{ platform: ai.platform, model: ai.model }}
+              platforms={usable}
+              onChange={(platformId, model) => {
+                setOverride({ platformId, model })
+              }}
+              onReset={() => {
+                setOverride(null)
+              }}
+            />
+          </>
+        )}
         <p className="mt-3 text-xs text-gray-500">
           This target role&apos;s data is sent to <span className="font-medium text-gray-700">{aiText || 'the AI platform'}</span> to do
-          this.{' '}
-          <button
-            type="button"
-            onClick={() => {
-              window.__cinqoToolBridge.navigate(SETTINGS_PATH)
-            }}
-            className="text-blue-700 underline"
-          >
-            Change it in Settings
-          </button>
+          this.
+          {usable.length === 0 && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => {
+                  window.__cinqoToolBridge.navigate(SETTINGS_PATH)
+                }}
+                className="text-blue-700 underline"
+              >
+                Change it in Settings
+              </button>
+            </>
+          )}
         </p>
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
@@ -109,7 +142,7 @@ export function CreateCvWithAi({
           <button
             type="button"
             onClick={start}
-            disabled={starting}
+            disabled={starting || !choice.platform}
             className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             <SparkleIcon />

@@ -412,6 +412,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                               docs={cvDocs}
                               templates={cvTemplates}
                               ai={ai}
+                              platforms={ai.platforms}
                               onCvsChanged={loadCvs}
                             />
                           )}

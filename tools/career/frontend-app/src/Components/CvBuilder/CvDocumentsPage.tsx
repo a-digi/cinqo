@@ -231,6 +231,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
             </button>
             <CreateCvWithAi
               ai={ai}
+              platforms={ai.platforms}
               personaName={personaName}
               disabledReason={
                 !ai.platform
@@ -239,7 +240,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
                     ? 'The AI is already creating a CV for this target role.'
                     : ''
               }
-              onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}
+              onStart={(focus, choice) => aiRuns.start({ id: personaId, name: personaName }, focus, choice)}
             />
           </div>
 
