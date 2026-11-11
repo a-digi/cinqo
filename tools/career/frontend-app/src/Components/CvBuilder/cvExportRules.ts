@@ -1,9 +1,9 @@
-// cvExportRules.ts (plan 251, step 5) — the pure parts of downloading a CV as a file: the name the file is saved under. The backend names it in Content-Disposition;
+// cvExportRules.ts (plan 251, steps 5 and 6) — the pure parts of downloading a CV as a file: the name the file is saved under. The backend names it in Content-Disposition;
 // when that header does not come through, the name is made from the CV's title by the same rule (letters, digits, spaces, dashes and underscores).
 
-export type CvExportFormat = 'md'
+export type CvExportFormat = 'md' | 'docx'
 
-export const EXPORT_EXTENSION: Record<CvExportFormat, string> = { md: 'md' }
+export const EXPORT_EXTENSION: Record<CvExportFormat, string> = { md: 'md', docx: 'docx' }
 
 // A title as a file name: only letters, digits, spaces, dashes and underscores, spaces collapsed, at most 100 characters, "cv" when nothing is left.
 export function safeBaseName(title: string): string {

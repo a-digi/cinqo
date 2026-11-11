@@ -5,6 +5,7 @@ import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvPreview } from './CvPreview'
 import { createdLabel } from './cvCardRules'
 import { downloadCvExport, type CvDocument, type Persona } from '../../api'
+import type { CvExportFormat } from './cvExportRules'
 import { XIcon } from '../../Shared/Icons/icons'
 import { attachablePersonas } from './cvPersonaRules'
 
@@ -48,18 +49,18 @@ export function CvCard({
   // The CV the AI just created: ringed, with no entrance animation.
   highlighted?: boolean
 }) {
-  // plan 251, step 5: the CV as a Markdown file, made on the spot by the backend; available on every page that shows CV cards.
-  const [exporting, setExporting] = useState(false)
+  // plan 251, steps 5 and 6: the CV as a Markdown or a Word file, made on the spot by the backend; available on every page that shows CV cards. One download at a time.
+  const [exporting, setExporting] = useState<CvExportFormat | null>(null)
   const [exportError, setExportError] = useState('')
-  const exportAs = () => {
-    setExporting(true)
+  const exportAs = (format: CvExportFormat) => {
+    setExporting(format)
     setExportError('')
-    downloadCvExport(doc, 'md')
+    downloadCvExport(doc, format)
       .catch((err: unknown) => {
         setExportError(err instanceof Error ? err.message : 'The CV could not be exported.')
       })
       .finally(() => {
-        setExporting(false)
+        setExporting(null)
       })
   }
   const controls = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
@@ -68,10 +69,21 @@ export function CvCard({
   const menuItems = [
     {
       key: 'export-md',
-      label: exporting ? 'Preparing Markdown…' : 'Download as Markdown',
+      label: exporting === 'md' ? 'Preparing Markdown…' : 'Download as Markdown',
       title: 'Download this CV as a Markdown (.md) file',
-      disabled: exporting,
-      onClick: exportAs,
+      disabled: exporting !== null,
+      onClick: () => {
+        exportAs('md')
+      },
+    },
+    {
+      key: 'export-docx',
+      label: exporting === 'docx' ? 'Preparing Word file…' : 'Download as Word',
+      title: 'Download this CV as a Word (.docx) file',
+      disabled: exporting !== null,
+      onClick: () => {
+        exportAs('docx')
+      },
     },
     onRename && { key: 'rename', label: 'Rename', onClick: onRename },
     onComments && { key: 'comments', label: 'Comments', onClick: onComments },
