@@ -64,7 +64,7 @@ func TestPiecesBecomeTheSameProposalAsOneCall(t *testing.T) {
 			if err := StoreProposal(whole, okProposal()); err != nil {
 				t.Fatal(err)
 			}
-			got, want := string(runOf(t, id).AIProposal), string(runOf(t, whole).AIProposal)
+			got, want := withoutIDs(string(runOf(t, id).AIProposal)), withoutIDs(string(runOf(t, whole).AIProposal))
 			if got != want {
 				t.Errorf("pieces gave\n%s\nwant\n%s", got, want)
 			}

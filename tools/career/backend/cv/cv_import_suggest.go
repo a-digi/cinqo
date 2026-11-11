@@ -72,6 +72,8 @@ type DetailsProposal struct {
 }
 
 type SkillProposal struct {
+	// Id is the item's own stable id (plan 257): assigned when a proposal is stored, so a tool can name this row; the AI need not send one.
+	Id                  string  `json:"id,omitempty" jsonschema:"leave out: the application gives the item its id"`
 	Action              string  `json:"action" jsonschema:"insert, or skip when not relevant or not confident"`
 	PossibleDuplicateOf *string `json:"possibleDuplicateOf" jsonschema:"the text of an existing skill this matches, otherwise null"`
 	Value               string  `json:"value"`
@@ -145,6 +147,7 @@ func shortDescriptionWarnings(jobs []ExperienceProposal) []string {
 }
 
 type ExperienceProposal struct {
+	Id                  string  `json:"id,omitempty" jsonschema:"leave out: the application gives the item its id"`
 	Action              string  `json:"action" jsonschema:"insert, or skip when not relevant or not confident"`
 	PossibleDuplicateOf *string `json:"possibleDuplicateOf" jsonschema:"the id of an existing experience entry this matches, otherwise null"`
 	Company             string  `json:"company"`
@@ -160,6 +163,7 @@ type ExperienceProposal struct {
 // EducationProposal is one school, degree or course found in the CV (plan 175). Dates are YYYY, YYYY-MM or YYYY-MM-DD; an empty end date
 // means still studying there.
 type EducationProposal struct {
+	Id                  string  `json:"id,omitempty" jsonschema:"leave out: the application gives the item its id"`
 	Action              string  `json:"action" jsonschema:"insert, or skip when not relevant or not confident"`
 	PossibleDuplicateOf *string `json:"possibleDuplicateOf" jsonschema:"the id of an existing education entry this matches (from list_education), otherwise null"`
 	Institution         string  `json:"institution"`
@@ -295,15 +299,11 @@ func validateProposal(p Proposal) (Proposal, error) {
 			}
 		}
 	}
-	if p.Skills == nil {
-		p.Skills = []SkillProposal{}
-	}
-	if p.Experience == nil {
-		p.Experience = []ExperienceProposal{}
-	}
-	if p.Education == nil {
-		p.Education = []EducationProposal{}
-	}
+	// copies, so giving the items their ids never changes the caller's lists
+	p.Skills = append([]SkillProposal{}, p.Skills...)
+	p.Experience = append([]ExperienceProposal{}, p.Experience...)
+	p.Education = append([]EducationProposal{}, p.Education...)
+	assignIDs(&p)
 	return p, nil
 }
 

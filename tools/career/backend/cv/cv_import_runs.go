@@ -63,8 +63,11 @@ type cvImportRun struct {
 	// in lockstep with the frontend's own shapes.
 	AIProposal  json.RawMessage `json:"aiProposal"`
 	SaveSummary json.RawMessage `json:"saveSummary,omitempty"`
-	CreatedAt   string          `json:"createdAt"`
-	UpdatedAt   string          `json:"updatedAt,omitempty"`
+	// Revision names the version of the suggestions (plan 257): it changes whenever the stored proposal does. The review page sends it back with the save summary, so a summary
+	// is never recorded for suggestions that have changed since the page read them. Empty while the run has no proposal.
+	Revision  string `json:"revision,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
 	// Status is generating, ready or failed; Error says why a run failed (step 155).
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
@@ -231,6 +234,33 @@ func updateCVImportRunSaveSummary(id string, saveSummary []byte) error {
 	return err
 }
 
+// updateCVImportRunSaveSummaryIf is updateCVImportRunSaveSummary for a page that says which version of the suggestions it showed (plan 257): when the suggestions changed since,
+// nothing is recorded and errSuggestionsMoved is returned (the page then reloads them). An empty revision records as before.
+func updateCVImportRunSaveSummaryIf(id string, saveSummary []byte, proposalRevision string) error {
+	if strings.TrimSpace(proposalRevision) == "" {
+		return updateCVImportRunSaveSummary(id, saveSummary)
+	}
+	run, err := getCVImportRun(id)
+	if err != nil {
+		return err
+	}
+	if run.Revision != strings.TrimSpace(proposalRevision) {
+		return errSuggestionsMoved
+	}
+	// recorded only while the proposal is still the one the revision was taken from
+	res, err := db.CareerDB.Exec(
+		`UPDATE cv_import_runs SET save_summary_json = ?, updated_at = datetime('now') WHERE id = ? AND ai_proposal_json = ?`,
+		string(saveSummary), id, string(run.AIProposal),
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return errSuggestionsMoved
+	}
+	return nil
+}
+
 func requireCVImportRunExists(id string) error {
 	var exists int
 	err := db.CareerDB.QueryRow(`SELECT 1 FROM cv_import_runs WHERE id = ?`, id).Scan(&exists)
@@ -270,6 +300,9 @@ func queryCVImportRuns(where string, args ...any) ([]cvImportRun, error) {
 			return nil, err
 		}
 		r.AIProposal = json.RawMessage(aiProposal)
+		if t := strings.TrimSpace(aiProposal); t != "" && t != noProposalJSON {
+			r.Revision = revisionOf(aiProposal)
+		}
 		if saveSummary.Valid {
 			r.SaveSummary = json.RawMessage(saveSummary.String)
 		}

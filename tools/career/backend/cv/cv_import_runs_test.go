@@ -3,6 +3,7 @@ package cv
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -19,6 +20,11 @@ func setup(t *testing.T) {
 }
 
 func str(s string) *string { return &s }
+
+// withoutIDs is a stored proposal without the ids of its items (plan 257): two runs made the same way have the same proposal but not the same ids.
+func withoutIDs(stored string) string {
+	return regexp.MustCompile(`"id":"[^"]*",`).ReplaceAllString(stored, "")
+}
 
 func okProposal() Proposal {
 	return Proposal{

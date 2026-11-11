@@ -399,6 +399,8 @@ func runMCPServer() {
 	persona.RegisterSuggestPersona(server)
 	cv.RegisterSuggestCVImport(server)
 	cv.RegisterCVImportDraftTools(server)
+	cv.RegisterGetCvImportSuggestions(server)
+	cv.RegisterUpdateCvImportSuggestions(server)
 	persona.RegisterUpdatePersonaDetails(server)
 	persona.RegisterAddCareerSkill(server)
 	persona.RegisterAddCareerSkills(server)

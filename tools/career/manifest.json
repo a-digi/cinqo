@@ -1120,6 +1120,14 @@
       "required_scope": "tool:career:cv_import"
     },
     {
+      "name": "get_cv_import_suggestions",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "update_cv_import_suggestions",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
       "name": "update_persona_details",
       "required_scope": "tool:career:profile"
     },

@@ -185,6 +185,8 @@ type createCVImportRunRequest struct {
 type updateCVImportRunRequest struct {
 	ID          string          `json:"id"`
 	SaveSummary json.RawMessage `json:"saveSummary"`
+	// ProposalRevision (optional, plan 257) is the revision of the suggestions the page showed when it made the summary; a summary for suggestions that changed since is refused (409).
+	ProposalRevision string `json:"proposalRevision"`
 	// Status and Error finish a generating run (step 155): "ready" once the AI handed a proposal over, "failed" with the reason.
 	// Without Status the request records the review's outcome (SaveSummary), as before.
 	Status string `json:"status"`
@@ -280,9 +282,13 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id and saveSummary are both required", http.StatusBadRequest)
 			return
 		}
-		if err := updateCVImportRunSaveSummary(body.ID, body.SaveSummary); err != nil {
+		if err := updateCVImportRunSaveSummaryIf(body.ID, body.SaveSummary, body.ProposalRevision); err != nil {
 			if errors.Is(err, errUnknownCVImportRun) {
 				http.Error(w, "unknown cv import run id", http.StatusBadRequest)
+				return
+			}
+			if errors.Is(err, errSuggestionsMoved) {
+				http.Error(w, "the suggestions changed since the page read them: reload them", http.StatusConflict)
 				return
 			}
 			http.Error(w, "failed to update cv import run: "+err.Error(), http.StatusInternalServerError)
