@@ -276,11 +276,13 @@ var metas = []TemplateMeta{
 }
 
 // ListTemplates returns every available design, in a stable, fixed
-// order — a plain Go function, not its own HTTP route; step 3's own
+// order (the two-column photo designs first, see traits.go; each group in
+// the order of metas) — a plain Go function, not its own HTTP route; step 3's own
 // GET .../cv-documents/templates handler just calls this and returns
 // the result as JSON.
 func ListTemplates() []TemplateMeta {
-	return metas
+	// a copy, so a caller cannot reorder or change the shared list
+	return append([]TemplateMeta(nil), pickerOrder...)
 }
 
 // Each id below is both a metas[].ID value AND a real subdirectory

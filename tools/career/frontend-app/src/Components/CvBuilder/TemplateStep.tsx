@@ -7,6 +7,7 @@ import type { CvTemplate } from '../../api'
 import { CvPhotoPicker } from './CvPhotoPicker'
 import { showsPicker, type CvPhoto } from './cvPhotoRules'
 import { chosenStatus, clampPage, pageOf, pageSlice, TEMPLATES_PER_PAGE } from './templatePaging'
+import { orderedCategories } from './templateCategories'
 
 export interface TemplateStepProps {
   templates: CvTemplate[]
@@ -60,17 +61,8 @@ export function TemplateStep({
   const [page, setPage] = useState(() => pageOf(templates, templateId))
   const galleryTop = useRef<HTMLDivElement>(null)
 
-  const categories = useMemo(() => {
-    const seen = new Set<string>()
-    const ordered: string[] = []
-    for (const t of templates) {
-      if (!seen.has(t.category)) {
-        seen.add(t.category)
-        ordered.push(t.category)
-      }
-    }
-    return [ALL_CATEGORIES, ...ordered]
-  }, [templates])
+  // plan 254: a fixed order, so putting the two-column designs first moves the cards and not the pills.
+  const categories = useMemo(() => [ALL_CATEGORIES, ...orderedCategories(templates)], [templates])
 
   const professionOptions = useMemo(() => {
     const all = new Set<string>()
