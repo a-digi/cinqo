@@ -1815,6 +1815,8 @@ export interface CVImportRun {
   driver?: string
   // What a generating run has stored so far; absent when nothing was.
   progress?: CVImportProgress
+  // The version of the suggestions (plan 257): it changes whenever the stored proposal does (the AI changed it in the chat). Absent while the run has no proposal.
+  revision?: string
 }
 
 export interface CVImportProgress {
@@ -1885,13 +1887,23 @@ export async function finishCVImportRun(
   return body.run
 }
 
-export async function updateCVImportRunSaveSummary(id: string, saveSummary: unknown): Promise<void> {
+// Thrown when the suggestions changed since the page read them (the AI changed them in the chat): the summary was not recorded and the page has to read them again (plan 257).
+export class SuggestionsChangedError extends Error {
+  constructor() {
+    super('the suggestions changed since the page read them')
+    this.name = 'SuggestionsChangedError'
+  }
+}
+
+// proposalRevision is the version of the suggestions the summary is for; when they changed since, nothing is recorded and SuggestionsChangedError is thrown.
+export async function updateCVImportRunSaveSummary(id: string, saveSummary: unknown, proposalRevision?: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, saveSummary }),
+    body: JSON.stringify({ id, saveSummary, ...(proposalRevision ? { proposalRevision } : {}) }),
   })
+  if (res.status === 409) throw new SuggestionsChangedError()
   if (!res.ok && res.status !== 204) throw new Error(`failed to update cv import run (${res.status})`)
 }
 

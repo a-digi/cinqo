@@ -24,6 +24,7 @@ export function ProposalRow({
   errorMessage,
   doneNote,
   detail,
+  badge,
 }: {
   item: ProposalItem
   label: string
@@ -49,6 +50,8 @@ export function ProposalRow({
   doneNote?: string
   // The text of the item (a job's description) shown as a collapsed preview under the row (plan 177); leave it out for items without one.
   detail?: string
+  // The AI changed the suggestions in the chat (plan 257): this row is new, or was changed, since the person last looked.
+  badge?: 'new' | 'changed'
 }) {
   const tone = proposalRowTone(item)
   return (
@@ -58,7 +61,17 @@ export function ProposalRow({
       >
         <input type="checkbox" checked={done || checked} disabled={done} onChange={onToggle} className="mt-0.5" />
         <span>
-          <span className="block text-gray-900">{label}</span>
+          <span className="block text-gray-900">
+            {label}
+            {badge && !done && (
+              <span
+                data-testid={`row-badge-${badge}`}
+                className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-medium text-blue-800"
+              >
+                {badge === 'new' ? 'New' : 'Changed'}
+              </span>
+            )}
+          </span>
           {item.possibleDuplicateOf !== null && !done && (
             <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
           )}

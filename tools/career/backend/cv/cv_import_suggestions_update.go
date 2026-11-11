@@ -1,6 +1,6 @@
 // cv_import_suggestions_update.go — the AI changes the suggestions of a ready CV import run (plan 257, step 2): update, add and remove, all or nothing, with the same rules as
-// the proposal had when it was handed over. A row that was already saved to the profile cannot be changed (the person saved it), and nothing here inserts anything into the
-// profile: that stays the person's click on the review page.
+// the proposal had when it was handed over. Only a run the person is still reviewing can be changed (once something was saved from it, or it was declined, the Import page shows it as
+// a finished record), and nothing here inserts anything into the profile: that stays the person's click on the review page.
 package cv
 
 import (
@@ -51,7 +51,8 @@ type SuggestionsChanged struct {
 }
 
 var (
-	errSuggestionsMoved = errors.New("the suggestions changed since you read them: read them again with get_cv_import_suggestions and make your changes on that version")
+	errSuggestionsClosed = errors.New("this import was already saved from or declined, so its suggestions can no longer be changed (the Import page shows them as a finished record); start a new import if something is missing")
+	errSuggestionsMoved  = errors.New("the suggestions changed since you read them: read them again with get_cv_import_suggestions and make your changes on that version")
 )
 
 // decodeObject reads a JSON object strictly into target: a field the row does not have is a problem the AI can correct.
@@ -109,39 +110,9 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// lockedRows says which rows are already saved to the profile (they cannot be changed): the sections by name, the rows by "list:id".
-func lockedRows(sum saveSummary, p Proposal) map[string]bool {
-	locked := map[string]bool{}
-	if stateOf(sum.Profile).State == stateSaved {
-		locked["profile"] = true
-	}
-	if stateOf(sum.Persona).State == stateSaved {
-		locked["persona"] = true
-	}
-	if stateOf(sum.PersonalDetails).State == stateSaved {
-		locked["personalDetails"] = true
-	}
-	for i, s := range p.Skills {
-		if stateOfRow(sum.Skills, s.Id, i).State == stateSaved {
-			locked["skills:"+s.Id] = true
-		}
-	}
-	for i, e := range p.Experience {
-		if stateOfRow(sum.Experience, e.Id, i).State == stateSaved {
-			locked["experience:"+e.Id] = true
-		}
-	}
-	for i, e := range p.Education {
-		if stateOfRow(sum.Education, e.Id, i).State == stateSaved {
-			locked["education:"+e.Id] = true
-		}
-	}
-	return locked
-}
-
 // applyChanges applies the operations, in order, to a copy of the proposal and returns it with the ids of the rows added. It stops at the first problem and then changes
 // nothing (the caller stores the result only when there is none). The result is validated by validateProposal as a whole.
-func applyChanges(p Proposal, changes []SuggestionChange, locked map[string]bool) (Proposal, []string, error) {
+func applyChanges(p Proposal, changes []SuggestionChange) (Proposal, []string, error) {
 	if len(changes) == 0 {
 		return Proposal{}, nil, problem("changes is empty: give at least one operation")
 	}
@@ -168,9 +139,6 @@ func applyChanges(p Proposal, changes []SuggestionChange, locked map[string]bool
 			}
 			if !contains(sections, c.Section) {
 				return Proposal{}, nil, problem("%s.section must be one of %s", path, strings.Join(sections, ", "))
-			}
-			if locked[c.Section] {
-				return Proposal{}, nil, problem("%s: the %s is already saved to the profile and cannot be changed here", path, c.Section)
 			}
 			var err error
 			switch c.Section {
@@ -203,9 +171,6 @@ func applyChanges(p Proposal, changes []SuggestionChange, locked map[string]bool
 		id := strings.TrimSpace(c.ID)
 		if id == "" {
 			return Proposal{}, nil, problem("%s.id is required to %s a row of %s: take it from get_cv_import_suggestions", path, c.Op, c.List)
-		}
-		if locked[c.List+":"+id] {
-			return Proposal{}, nil, problem("%s: this row is already saved to the profile and cannot be changed here", path)
 		}
 		if err := changeRow(&p, c, id, path); err != nil {
 			return Proposal{}, nil, err
@@ -329,11 +294,12 @@ func ChangeSuggestions(runID string, changes []SuggestionChange, basedOn string)
 	if basedOn = strings.TrimSpace(basedOn); basedOn != "" && basedOn != revisionOf(stored) {
 		return SuggestionsChanged{}, errSuggestionsMoved
 	}
-	var sum saveSummary
-	if len(run.SaveSummary) > 0 {
-		_ = json.Unmarshal(run.SaveSummary, &sum)
+	// The Import page shows a run that was saved from (or declined) as a read-only result: its suggestions are a record of what was saved, and a change made now could never be
+	// reviewed or saved. A run is only open to changes while the person is still reviewing it (no save summary yet).
+	if !noRawJSON(run.SaveSummary) {
+		return SuggestionsChanged{}, errSuggestionsClosed
 	}
-	next, added, err := applyChanges(p, changes, lockedRows(sum, p))
+	next, added, err := applyChanges(p, changes)
 	if err != nil {
 		return SuggestionsChanged{}, err
 	}
@@ -365,7 +331,7 @@ func RegisterUpdateCvImportSuggestions(server *mcp.Server) {
 		Description: "Change the suggestions of a CV import while talking to the user: update a field of a suggestion (for example fix a job's dates, or set action to skip to leave a row out), " +
 			"add a suggestion or remove one. First read them with get_cv_import_suggestions (it gives every row's id and the revision) and pass that revision as basedOn. " +
 			"All the operations of one call are applied together or not at all, and they must follow the same rules as the original suggestions (each row has an action, insert or skip, " +
-			"limits, dates). A row that was already saved to the profile cannot be changed. This only edits the suggestions the user reviews on the Import page: it saves nothing to the profile, " +
+			"limits, dates). Once the user has saved from the import (or declined it) the suggestions are closed and cannot be changed. This only edits the suggestions the user reviews on the Import page: it saves nothing to the profile, " +
 			"and you must never say that something was saved; the user saves on the Import page. Afterwards tell the user in one or two sentences what you changed.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateSuggestionsArgs) (*mcp.CallToolResult, any, error) {
 		runID := strings.TrimSpace(args.RunID)

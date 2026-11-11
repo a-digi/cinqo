@@ -310,32 +310,37 @@ func TestACallIsAllOrNothing(t *testing.T) {
 	}
 }
 
-func TestRowsAlreadySavedToTheProfileCannotBeChanged(t *testing.T) {
+func TestARunThatWasSavedFromOrDeclinedCannotBeChanged(t *testing.T) {
 	s := newSugg(t)
 	b := s.get()
-	setSummary(t, s.run, `{"profile":{"ok":true},"persona":{"ok":false,"error":"name taken"},"skills":[{"id":"`+b.Skills[0].Id+`","index":0,"ok":true,"value":"Go"},{"index":2,"ok":false,"error":"x","value":"SQL"}],"experience":[{"index":0,"ok":true,"label":"x"}],"education":[]}`)
-	for name, c := range map[string]SuggestionChange{
-		"update a saved skill":     upd("skills", b.Skills[0].Id, map[string]any{"value": "x"}),
-		"remove a saved skill":     rem("skills", b.Skills[0].Id),
-		"update a saved job":       upd("experience", b.Experience[0].Id, map[string]any{"title": "x"}),
-		"remove a saved job":       rem("experience", b.Experience[0].Id),
-		"update the saved profile": updSection("profile", map[string]any{"name": "x"}),
+	ops := []SuggestionChange{add("skills", map[string]any{"value": "late"}), upd("skills", b.Skills[0].Id, map[string]any{"value": "x"}), rem("skills", b.Skills[1].Id), updSection("profile", map[string]any{"name": "x"})}
+	for name, summary := range map[string]string{
+		"a partial save":    `{"skills":[{"index":0,"ok":true,"value":"Go"}]}`,
+		"a save of nothing": `{"skills":[],"experience":[],"education":[]}`,
+		"a failed save":     `{"persona":{"ok":false,"error":"name taken"},"skills":[],"experience":[],"education":[]}`,
+		"a declined import": `{"declined":true,"skills":[],"experience":[],"education":[]}`,
 	} {
-		_, err := s.change("", c)
-		wantProblem(t, err, "already saved to the profile")
-		if err == nil {
-			t.Errorf("%s: accepted", name)
+		setSummary(t, s.run, summary)
+		for _, op := range ops {
+			if _, err := s.change("", op); !errors.Is(err, errSuggestionsClosed) {
+				t.Errorf("%s, %s: %v", name, op.Op, err)
+			}
 		}
 	}
-	// pending and failed rows may be changed, and a new row may always be added
-	if _, err := s.change("", upd("skills", b.Skills[1].Id, map[string]any{"value": "Docker CLI"}), upd("skills", b.Skills[2].Id, map[string]any{"value": "PostgreSQL"}),
-		updSection("persona", map[string]any{"name": "Platform"}), updSection("personalDetails", map[string]any{"headline": "New"}), upd("education", b.Education[0].Id, map[string]any{"degree": "PhD"}),
-		add("skills", map[string]any{"value": "Zig"}), add("experience", map[string]any{"company": "New Co"})); err != nil {
-		t.Fatalf("%v", err)
+	if s.get().Revision != b.Revision {
+		t.Error("a refused call changed the suggestions")
 	}
-	a := s.get()
-	if a.Skills[0].Value != "Go" || a.Skills[0].State != "saved" || a.Skills[1].Value != "Docker CLI" || a.Skills[2].Value != "PostgreSQL" || a.Persona.Name != "Platform" || len(a.Experience) != 2 {
-		t.Errorf("%+v", a)
+	// the suggestions can still be read, with the states of what was saved
+	setSummary(t, s.run, `{"skills":[{"index":0,"ok":true,"value":"Go"}]}`)
+	if g := s.get(); g.Skills[0].State != "saved" {
+		t.Errorf("a saved run can still be read: %+v", g.Skills[0])
+	}
+	// a summary that is null or empty means the review has not started
+	for _, empty := range []string{"null", " null "} {
+		setSummary(t, s.run, empty)
+		if _, err := s.change("", add("skills", map[string]any{"value": "ok " + empty})); err != nil {
+			t.Errorf("a run with a %q summary is still being reviewed: %v", empty, err)
+		}
 	}
 }
 
@@ -407,15 +412,14 @@ func TestTwoChangesAtOnceOnTheSameVersionOnlyOneWins(t *testing.T) {
 	}
 }
 
-func TestAChangeLeavesTheSaveSummaryAndTheRunAlone(t *testing.T) {
+func TestAChangeLeavesTheRestOfTheRunAlone(t *testing.T) {
 	s := newSugg(t)
 	b := s.get()
-	setSummary(t, s.run, `{"skills":[{"index":2,"ok":true,"value":"SQL"}]}`)
 	if _, err := s.change("", rem("skills", b.Skills[0].Id)); err != nil {
 		t.Fatal(err)
 	}
 	r := runOf(t, s.run)
-	if string(r.SaveSummary) != `{"skills":[{"index":2,"ok":true,"value":"SQL"}]}` || r.Status != "ready" || r.ConversationID != "conv-1" || r.MediaFileID != "media-1" {
+	if len(r.SaveSummary) != 0 || r.Status != "ready" || r.ConversationID != "conv-1" || r.MediaFileID != "media-1" || r.OriginalFilename != "cv.pdf" {
 		t.Errorf("%+v", r)
 	}
 }
@@ -498,7 +502,7 @@ func TestUpdateCvImportSuggestionsTool(t *testing.T) {
 		if tl.Name != "update_cv_import_suggestions" {
 			continue
 		}
-		if !strings.Contains(tl.Description, "saves nothing to the profile") || !strings.Contains(tl.Description, "never say that something was saved") {
+		if !strings.Contains(tl.Description, "saves nothing to the profile") || !strings.Contains(tl.Description, "never say that something was saved") || !strings.Contains(tl.Description, "cannot be changed") {
 			t.Error("the description must say that it saves nothing to the profile")
 		}
 		schema, _ := json.Marshal(tl.InputSchema)
@@ -526,25 +530,26 @@ func TestTheSaveSummaryIsRefusedForSuggestionsThatChanged(t *testing.T) {
 		body := fmt.Sprintf(`{"id":%q,"saveSummary":{"skills":[{"index":0,"ok":true,"value":"Go"}]},"proposalRevision":%q}`, s.run, rev)
 		return call(http.MethodPut, "/cv-import/runs", body)
 	}
-	if rec := put(b.Revision); rec.Code != http.StatusNoContent {
-		t.Fatalf("the current revision: %d %s", rec.Code, rec.Body.String())
-	}
-	if _, err := s.change("", add("skills", map[string]any{"value": "moved"})); err != nil {
+	// the AI changes the suggestions after the page read them and before the person saved
+	if _, err := s.change(b.Revision, add("skills", map[string]any{"value": "moved"})); err != nil {
 		t.Fatal(err)
 	}
-	before := string(runOf(t, s.run).SaveSummary)
 	if rec := put(b.Revision); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "reload") {
 		t.Errorf("the old revision: %d %s", rec.Code, rec.Body.String())
 	}
-	if string(runOf(t, s.run).SaveSummary) != before {
+	if len(runOf(t, s.run).SaveSummary) != 0 {
 		t.Error("a refused summary was recorded")
 	}
-	// without a revision it is recorded as before; with the new one too
+	// the page reads them again and saves with the new revision; from then on the suggestions are closed
+	if rec := put(s.get().Revision); rec.Code != http.StatusNoContent {
+		t.Errorf("the new revision: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := s.change("", add("skills", map[string]any{"value": "too late"})); !errors.Is(err, errSuggestionsClosed) {
+		t.Errorf("after the save: %v", err)
+	}
+	// a later summary without a revision is recorded as before
 	if rec := call(http.MethodPut, "/cv-import/runs", fmt.Sprintf(`{"id":%q,"saveSummary":{"skills":[]}}`, s.run)); rec.Code != http.StatusNoContent {
 		t.Errorf("no revision: %d", rec.Code)
-	}
-	if rec := put(s.get().Revision); rec.Code != http.StatusNoContent {
-		t.Errorf("the new revision: %d", rec.Code)
 	}
 }
 

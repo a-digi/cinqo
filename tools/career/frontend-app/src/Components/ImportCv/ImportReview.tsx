@@ -2,8 +2,8 @@
 // and Insert (plan 166, step 3; it used to live inside ImportCvPage and was lost on a reload). It works on a run read from the
 // server: the proposal is the run's, and every insert writes the full save summary back onto the same run, so the review can be
 // left and resumed on the run's own URL until something was saved.
-import { useEffect, useMemo, useState } from 'react'
-import { updateCVImportRunSaveSummary, type CVImportRun } from '../../api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { fetchCVImportRun, SuggestionsChangedError, updateCVImportRunSaveSummary, type CVImportRun } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { IMPORT_CV_PATH } from '../../paths'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
@@ -13,7 +13,15 @@ import { parseProposal, type CVImportProposal, type ProposalItem } from './parse
 import { pipelineStages } from './pipelineRules'
 import { ProposalRow } from './ProposalRow'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
-import { buildFullSaveSummary, buildInitialChecked, insertState } from './reviewRules'
+import {
+  buildFullSaveSummary,
+  buildInitialChecked,
+  describeDiff,
+  insertState,
+  mergeProposal,
+  rowKey,
+  type ReviewState,
+} from './reviewRules'
 import { experienceLabel } from './experienceLabel'
 import { educationLabel } from './educationInsertRules'
 
@@ -25,9 +33,21 @@ function readProposal(run: CVImportRun): { proposal: CVImportProposal | null; er
   }
 }
 
+// How often the review looks at the run again to see whether the AI changed the suggestions in the chat (plan 257).
+export const SUGGESTIONS_POLL_MS = 5000
+
 export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOver: () => void }) {
   const parsed = useMemo(() => readProposal(run), [run])
-  const proposal = parsed.proposal
+  // The suggestions the person is reviewing and their version. They start as the run's and follow the run while the AI changes them in the chat: the page keeps its own copy so that
+  // the rows the person ticked and the rows already inserted stay as they are (the page itself never changes the run's own proposal).
+  const [shown, setShown] = useState<{ proposal: CVImportProposal | null; revision: string | undefined }>(() => ({
+    proposal: parsed.proposal,
+    revision: run.revision,
+  }))
+  const proposal = shown.proposal
+  // What the AI changed since the person last looked: one line, and a tag on the rows (by key).
+  const [changeNote, setChangeNote] = useState('')
+  const [badges, setBadges] = useState<Record<string, 'new' | 'changed'>>({})
   const [duplicateLabels, setDuplicateLabels] = useState<DuplicateLabels | null>(null)
   const [checked, setChecked] = useState<Record<string, boolean>>(() => (proposal ? buildInitialChecked(proposal) : {}))
   // Required only when the persona row is unchecked: Personal Details, Skills and Experience need a real persona, so
@@ -43,6 +63,69 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   const [insertNotes, setInsertNotes] = useState<Record<string, string>>({})
   const [inserting, setInserting] = useState(false)
   const [insertValidationError, setInsertValidationError] = useState('')
+
+  // The latest of everything the poll needs, so the timer never works on a stale copy.
+  const latest = useRef({ proposal, revision: shown.revision, checked, insertedKeys, insertErrors, insertNotes, inserting })
+  latest.current = { proposal, revision: shown.revision, checked, insertedKeys, insertErrors, insertNotes, inserting }
+
+  // Applies a newer version of the suggestions: the person's state is carried over by row (plan 257), and what changed is said once.
+  function applyNewer(newProposal: CVImportProposal, revision: string | undefined, state: ReviewState): ReviewState {
+    const cur = latest.current.proposal
+    if (!cur) return state
+    const merged = mergeProposal(cur, newProposal, state)
+    setShown({ proposal: newProposal, revision })
+    setChecked(merged.state.checked)
+    setInsertedKeys(merged.state.insertedKeys)
+    setInsertErrors(merged.state.insertErrors)
+    setInsertNotes(merged.state.insertNotes)
+    const note = describeDiff(merged.diff)
+    if (note) {
+      setChangeNote(note)
+      setBadges((prev) => {
+        const next: Record<string, 'new' | 'changed'> = {}
+        for (const key of Object.keys(merged.state.checked)) {
+          const kept = prev[key] as 'new' | 'changed' | undefined
+          if (kept) next[key] = kept
+        }
+        for (const key of merged.diff.changed) next[key] = 'changed'
+        for (const key of merged.diff.added) next[key] = 'new'
+        return next
+      })
+    }
+    return merged.state
+  }
+
+  useEffect(() => {
+    // An older server gives no revision: nothing to compare, nothing to watch.
+    if (run.revision === undefined) return
+    const timer = setInterval(() => {
+      const cur = latest.current
+      if (cur.inserting || !cur.proposal || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
+      fetchCVImportRun(run.id)
+        .then((fresh) => {
+          const now = latest.current
+          if (fresh?.revision === undefined || fresh.revision === now.revision || now.inserting) return
+          let next: CVImportProposal
+          try {
+            next = parseProposal(fresh.aiProposal)
+          } catch {
+            return
+          }
+          applyNewer(next, fresh.revision, {
+            checked: now.checked,
+            insertedKeys: now.insertedKeys,
+            insertErrors: now.insertErrors,
+            insertNotes: now.insertNotes,
+          })
+        })
+        .catch(() => undefined)
+    }, SUGGESTIONS_POLL_MS)
+    return () => {
+      clearInterval(timer)
+    }
+    // the timer reads everything through `latest`, so it is made once per run
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id, run.revision === undefined])
 
   useEffect(() => {
     if (!proposal) return
@@ -88,10 +171,22 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     if (!proposal) return
     setInsertValidationError('')
 
-    const effectiveChecked: Record<string, boolean> = {}
-    for (const key of Object.keys(checked)) {
-      effectiveChecked[key] = checked[key] && !insertedKeys[key]
+    // insertSelected works by position (`skill-3`); the review keeps its state by the row's key (its id): the two are translated here and back.
+    const wanted = (key: string) => (checked[key] ?? false) && !insertedKeys[key]
+    const effectiveChecked: Record<string, boolean> = {
+      profile: wanted('profile'),
+      persona: wanted('persona'),
+      personalDetails: wanted('personalDetails'),
     }
+    proposal.skills.forEach((r, i) => {
+      effectiveChecked[`skill-${i}`] = wanted(rowKey('skill', r, i))
+    })
+    proposal.experience.forEach((r, i) => {
+      effectiveChecked[`experience-${i}`] = wanted(rowKey('experience', r, i))
+    })
+    proposal.education.forEach((r, i) => {
+      effectiveChecked[`education-${i}`] = wanted(rowKey('education', r, i))
+    })
 
     const needsExistingPersona = !effectiveChecked.persona && resolvedPersonaId === null && !insertedKeys.persona
     if (needsExistingPersona && !existingPersonaId) {
@@ -114,19 +209,22 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       if (result.profile?.ok) nextInsertedKeys.profile = true
       if (result.persona?.ok) nextInsertedKeys.persona = true
       if (result.personalDetails?.ok) nextInsertedKeys.personalDetails = true
+      const skillKey = (index: number) => rowKey('skill', proposal.skills[index], index)
+      const experienceKey = (index: number) => rowKey('experience', proposal.experience[index], index)
+      const educationKey = (index: number) => rowKey('education', proposal.education[index], index)
       result.skills.forEach((s) => {
-        if (s.ok) nextInsertedKeys[`skill-${s.index}`] = true
+        if (s.ok) nextInsertedKeys[skillKey(s.index)] = true
       })
       result.experience.forEach((e) => {
-        if (e.ok) nextInsertedKeys[`experience-${e.index}`] = true
+        if (e.ok) nextInsertedKeys[experienceKey(e.index)] = true
       })
       result.education.forEach((e) => {
-        if (e.ok) nextInsertedKeys[`education-${e.index}`] = true
+        if (e.ok) nextInsertedKeys[educationKey(e.index)] = true
       })
       setInsertedKeys(nextInsertedKeys)
       const nextNotes = { ...insertNotes }
       result.education.forEach((e) => {
-        if (e.ok) nextNotes[`education-${e.index}`] = e.note ?? ''
+        if (e.ok) nextNotes[educationKey(e.index)] = e.note ?? ''
       })
       setInsertNotes(nextNotes)
 
@@ -140,19 +238,39 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       apply('persona', result.persona)
       apply('personalDetails', result.personalDetails)
       result.skills.forEach((s) => {
-        apply(`skill-${s.index}`, s)
+        apply(skillKey(s.index), s)
       })
       result.experience.forEach((e) => {
-        apply(`experience-${e.index}`, e)
+        apply(experienceKey(e.index), e)
       })
       result.education.forEach((e) => {
-        apply(`education-${e.index}`, e)
+        apply(educationKey(e.index), e)
       })
       setInsertErrors(nextInsertErrors)
 
       const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors, nextNotes)
-      updateCVImportRunSaveSummary(run.id, summary).catch(() => {
-        // Non-fatal: the insert already succeeded; losing the history record of it must not error the user's own review.
+      updateCVImportRunSaveSummary(run.id, summary, shown.revision).catch(async (err: unknown) => {
+        // The AI changed the suggestions between the person's reading and the save (plan 257): read them again, keep what was inserted by row, and record the summary for the new version.
+        // Any other failure is non-fatal: the insert already succeeded; losing the history record of it must not error the user's own review.
+        if (!(err instanceof SuggestionsChangedError)) return
+        try {
+          const fresh = await fetchCVImportRun(run.id)
+          if (!fresh) return
+          const next = parseProposal(fresh.aiProposal)
+          const state = applyNewer(next, fresh.revision, {
+            checked,
+            insertedKeys: nextInsertedKeys,
+            insertErrors: nextInsertErrors,
+            insertNotes: nextNotes,
+          })
+          await updateCVImportRunSaveSummary(
+            run.id,
+            buildFullSaveSummary(next, state.insertedKeys, state.insertErrors, state.insertNotes),
+            fresh.revision,
+          )
+        } catch {
+          // the page shows the new version at its next look; nothing more to do here
+        }
       })
     } finally {
       setInserting(false)
@@ -173,6 +291,25 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   return (
     <div>
       <ImportPipeline stages={stages} onStartOver={onStartOver} />
+      {changeNote && (
+        <div
+          role="status"
+          data-testid="suggestions-changed"
+          className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+        >
+          <span>{changeNote}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setChangeNote('')
+              setBadges({})
+            }}
+            className="shrink-0 text-xs font-medium underline hover:no-underline"
+          >
+            OK
+          </button>
+        </div>
+      )}
       <div className="career-stagger space-y-4">
         <section className={cardClassName} style={cardStyle}>
           <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
@@ -185,6 +322,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
             }}
             done={insertedKeys.profile}
             errorMessage={insertErrors.profile}
+            badge={badges.profile}
           />
           {!checked.profile && !insertedKeys.profile && (
             <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
@@ -203,6 +341,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
             }}
             done={insertedKeys.persona}
             errorMessage={insertErrors.persona}
+            badge={badges.persona}
           />
           {!checked.persona && !insertedKeys.persona && (
             <div className="mt-2">
@@ -230,6 +369,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
             }}
             done={insertedKeys.personalDetails}
             errorMessage={insertErrors.personalDetails}
+            badge={badges.personalDetails}
           />
         </section>
 
@@ -237,20 +377,24 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
           {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
           <div className="space-y-1">
-            {proposal.skills.map((skill, i) => (
-              <ProposalRow
-                key={i}
-                item={skill}
-                label={skill.value}
-                resolvedDuplicateLabel={resolvedLabelFor(skill, 'skill')}
-                checked={checked[`skill-${i}`]}
-                onToggle={() => {
-                  toggle(`skill-${i}`)
-                }}
-                done={insertedKeys[`skill-${i}`]}
-                errorMessage={insertErrors[`skill-${i}`]}
-              />
-            ))}
+            {proposal.skills.map((skill, i) => {
+              const key = rowKey('skill', skill, i)
+              return (
+                <ProposalRow
+                  key={key}
+                  item={skill}
+                  label={skill.value}
+                  resolvedDuplicateLabel={resolvedLabelFor(skill, 'skill')}
+                  checked={checked[key]}
+                  onToggle={() => {
+                    toggle(key)
+                  }}
+                  done={insertedKeys[key]}
+                  errorMessage={insertErrors[key]}
+                  badge={badges[key]}
+                />
+              )
+            })}
           </div>
         </section>
 
@@ -258,21 +402,25 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
           {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
           <div className="space-y-1">
-            {proposal.experience.map((exp, i) => (
-              <ProposalRow
-                key={i}
-                item={exp}
-                label={experienceLabel(exp)}
-                detail={exp.description}
-                resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
-                checked={checked[`experience-${i}`]}
-                onToggle={() => {
-                  toggle(`experience-${i}`)
-                }}
-                done={insertedKeys[`experience-${i}`]}
-                errorMessage={insertErrors[`experience-${i}`]}
-              />
-            ))}
+            {proposal.experience.map((exp, i) => {
+              const key = rowKey('experience', exp, i)
+              return (
+                <ProposalRow
+                  key={key}
+                  item={exp}
+                  label={experienceLabel(exp)}
+                  detail={exp.description}
+                  resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
+                  checked={checked[key]}
+                  onToggle={() => {
+                    toggle(key)
+                  }}
+                  done={insertedKeys[key]}
+                  errorMessage={insertErrors[key]}
+                  badge={badges[key]}
+                />
+              )
+            })}
           </div>
         </section>
 
@@ -280,21 +428,25 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           <h2 className="mb-2 text-base font-semibold text-gray-900">Education</h2>
           {proposal.education.length === 0 && <p className="text-sm text-gray-400">No education proposed.</p>}
           <div className="space-y-1">
-            {proposal.education.map((edu, i) => (
-              <ProposalRow
-                key={i}
-                item={edu}
-                label={educationLabel(edu)}
-                resolvedDuplicateLabel={resolvedLabelFor(edu, 'education')}
-                checked={checked[`education-${i}`]}
-                onToggle={() => {
-                  toggle(`education-${i}`)
-                }}
-                done={insertedKeys[`education-${i}`]}
-                doneNote={insertNotes[`education-${i}`]}
-                errorMessage={insertErrors[`education-${i}`]}
-              />
-            ))}
+            {proposal.education.map((edu, i) => {
+              const key = rowKey('education', edu, i)
+              return (
+                <ProposalRow
+                  key={key}
+                  item={edu}
+                  label={educationLabel(edu)}
+                  resolvedDuplicateLabel={resolvedLabelFor(edu, 'education')}
+                  checked={checked[key]}
+                  onToggle={() => {
+                    toggle(key)
+                  }}
+                  done={insertedKeys[key]}
+                  doneNote={insertNotes[key]}
+                  errorMessage={insertErrors[key]}
+                  badge={badges[key]}
+                />
+              )
+            })}
           </div>
         </section>
 

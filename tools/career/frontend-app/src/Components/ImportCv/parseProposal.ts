@@ -26,11 +26,14 @@ export interface PersonalDetailsProposal extends ProposalItem {
   minSalary: number
 }
 
+// The list items carry an id of their own once the server gave them one (plan 257); a proposal stored before that has none, and the page then keys its rows by position.
 export interface SkillProposal extends ProposalItem {
+  id?: string
   value: string
 }
 
 export interface ExperienceProposal extends ProposalItem {
+  id?: string
   company: string
   title: string
   startDate: string
@@ -40,6 +43,7 @@ export interface ExperienceProposal extends ProposalItem {
 
 // One school, degree or course found in the CV (plan 175).
 export interface EducationProposal extends ProposalItem {
+  id?: string
   institution: string
   degree: string
   fieldOfStudy: string
@@ -111,6 +115,11 @@ function asNumber(v: unknown, field: string): number {
   return v
 }
 
+// The id of a list item: a text the server made, or none (an older proposal).
+function asId(raw: unknown): { id?: string } {
+  return isRecord(raw) && typeof raw.id === 'string' && raw.id !== '' ? { id: raw.id } : {}
+}
+
 function parseProposalItem(raw: unknown, path: string): ProposalItem {
   if (!isRecord(raw)) throw new Error(`expected "${path}" to be an object`)
   if (!isAction(raw.action)) throw new Error(`expected "${path}.action" to be "insert" or "skip"`)
@@ -149,6 +158,7 @@ export function parseProposal(root: unknown): CVImportProposal {
 
   if (!Array.isArray(root.skills)) throw new Error('expected "skills" to be an array')
   const skills: SkillProposal[] = root.skills.map((raw: unknown, i) => ({
+    ...asId(raw),
     ...parseProposalItem(raw, `skills[${i}]`),
     value: asString(isRecord(raw) ? raw.value : undefined, `skills[${i}].value`),
   }))
@@ -158,6 +168,7 @@ export function parseProposal(root: unknown): CVImportProposal {
     const path = `experience[${i}]`
     const obj = isRecord(raw) ? raw : {}
     return {
+      ...asId(raw),
       ...parseProposalItem(raw, path),
       company: asString(obj.company, `${path}.company`),
       title: asString(obj.title, `${path}.title`),
@@ -175,6 +186,7 @@ export function parseProposal(root: unknown): CVImportProposal {
       const path = `education[${i}]`
       const obj = isRecord(raw) ? raw : {}
       return {
+        ...asId(raw),
         ...parseProposalItem(raw, path),
         institution: asString(obj.institution, `${path}.institution`),
         degree: asString(obj.degree, `${path}.degree`),
