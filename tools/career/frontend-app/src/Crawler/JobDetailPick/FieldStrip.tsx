@@ -20,7 +20,8 @@ function stateOf(f: PickField, pick: Pick | null, rule: RuleDraft | null): { tex
   }
   if (!pick) return { text: f === 'description' ? 'not chosen yet' : 'not chosen', set: false }
   if (isStructuredPick(pick)) return { text: `${pick.value ? `${shortValue(pick.value, 50)} · ` : ''}from the page’s own data`, set: true }
-  return { text: pick.value ? shortValue(pick.value, 50) : 'kept from the stored instructions', set: true }
+  const reads = pick.attribute && pick.attribute !== 'text' ? ` · reads the ${pick.attribute} attribute` : ''
+  return { text: `${pick.value ? shortValue(pick.value, 50) : 'kept from the stored instructions'}${reads}`, set: true }
 }
 
 // The five fields of the job in one row of chips (plan 249): what each is now, in the colour it has on the page, with the two actions that need no page: leave a field out and

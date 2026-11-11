@@ -351,7 +351,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
   }
 
   // The person answered in the page for the element n: it becomes the pick of the field (the page is what they see, so the pick is what they pointed at), or what it is now is cleared.
-  function answerFromPage(n: number, field: PickField | null, now: PickField[]) {
+  function answerFromPage(n: number, field: PickField | null, now: PickField[], attribute?: string) {
     if (field === null) {
       setPicks((prev) => {
         const next = { ...prev }
@@ -362,7 +362,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
     }
     const v = viewByNumber(view).get(n)
     if (!v) return
-    setPicks((prev) => ({ ...prev, [field]: pickFromView(v) }))
+    setPicks((prev) => ({ ...prev, [field]: pickFromView(v, attribute) }))
   }
 
   // The instructions are saved: the modal stays open, but the picker folds away so only the saved state and its button are left, and everything of this round is dropped;

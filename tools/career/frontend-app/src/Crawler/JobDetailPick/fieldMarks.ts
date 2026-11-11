@@ -119,8 +119,32 @@ export function numberedAround(node: Node | null): number | undefined {
 }
 
 // What a pick made on the page reads: the element's verified selector and its text (the machine date is a later choice).
-export function pickFromView(v: ViewElement): Pick {
-  return pickFromElement({ selector: v.selector, unique: v.unique, tag: v.tag, text: v.text, chars: v.chars })
+// `attribute` is the machine date the person chose to read (never the text, which is the default).
+export function pickFromView(v: ViewElement, attribute?: string): Pick {
+  const p = pickFromElement({ selector: v.selector, unique: v.unique, tag: v.tag, text: v.text, chars: v.chars })
+  return attribute ? { ...p, attribute } : p
+}
+
+// A description box: the smallest element around the clicked one with at least this much text (a paragraph of a description is not the description).
+export const MIN_DESCRIPTION_CHARS = 200
+
+// The numbered elements the analysis lists, from this one up to the outermost (the elements of the copy are walked by their parents).
+export function boxChain(doc: Document, n: number, byNumber: Map<number, ViewElement>): number[] {
+  const out: number[] = []
+  let el: Element | null = doc.querySelector(`[data-cinqo-e="${String(n)}"]`)
+  while (el) {
+    const v = el.getAttribute('data-cinqo-e')
+    const k = v === null ? NaN : Number(v)
+    if (Number.isInteger(k) && byNumber.has(k) && !out.includes(k)) out.push(k)
+    el = el.parentElement
+  }
+  return out.length > 0 ? out : [n]
+}
+
+// Which box of the chain a description starts as: the first with enough text, else the clicked element itself.
+export function defaultBoxIndex(chain: number[], byNumber: Map<number, ViewElement>): number {
+  const i = chain.findIndex((k) => (byNumber.get(k)?.chars ?? 0) >= MIN_DESCRIPTION_CHARS)
+  return i < 0 ? 0 : i
 }
 
 // The pick of a field when its selector is on the page but several places have it (a stored or suggested selector that is not unique).
