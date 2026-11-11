@@ -225,6 +225,7 @@ export function TemplateStep({
           <Pagination
             page={shownPage}
             pageSize={TEMPLATES_PER_PAGE}
+            numbered
             total={filteredTemplates.length}
             onPageChange={(next) => {
               setPage(next)
