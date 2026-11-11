@@ -24,7 +24,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-FRONTEND_TEMPLATES="$SCRIPT_DIR/../../../frontend-app/src/Components/CvBuilder/Template"
+FRONTEND_TEMPLATES="$SCRIPT_DIR/../../../../frontend-app/src/Components/CvBuilder/Template"
 
 for id in modern-mono modern-sidebar classic \
   ats-clean ats-serif-classic ats-minimal-gray ats-executive ats-compact \

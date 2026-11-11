@@ -8,8 +8,12 @@ import (
 	"database/sql"
 	"strings"
 
+	"career-tool-backend/courses"
 	"career-tool-backend/cv/cvbuilder/templates"
 	"career-tool-backend/db"
+	"career-tool-backend/education"
+	"career-tool-backend/hobbies"
+	"career-tool-backend/languages"
 	"career-tool-backend/persona"
 )
 
@@ -85,5 +89,54 @@ func AssembleCvData(personaID string) (templates.CvData, error) {
 		})
 	}
 
+	// The profile's own sections (plan 251): global to the profile, not per persona, in the order each package lists them (education: the one still going on
+	// first; courses: the latest first; languages: native first, then C2 down to A1; hobbies by name). Empty ones stay out of the data.
+	if err := assembleProfileSections(profileID, &data); err != nil {
+		return data, err
+	}
+
 	return data, nil
+}
+
+// languageLevelLabel is how a profile's level code is shown on a CV: "Native", "C2" ... "A1" (the codes are validated by the languages package).
+func languageLevelLabel(level string) string {
+	if level == "native" {
+		return "Native"
+	}
+	return strings.ToUpper(level)
+}
+
+// assembleProfileSections adds the profile's education, courses, languages and hobbies to data.
+func assembleProfileSections(profileID string, data *templates.CvData) error {
+	edu, err := education.List(profileID)
+	if err != nil {
+		return err
+	}
+	for _, e := range edu {
+		data.Education = append(data.Education, templates.EducationEntry{
+			Institution: e.Institution, Degree: e.Degree, FieldOfStudy: e.FieldOfStudy, StartDate: e.StartDate, EndDate: e.EndDate, Description: e.Description,
+		})
+	}
+	crs, err := courses.List(profileID)
+	if err != nil {
+		return err
+	}
+	for _, c := range crs {
+		data.Courses = append(data.Courses, templates.CourseEntry{Title: c.Title, Provider: c.Provider, CompletedDate: c.CompletedDate})
+	}
+	langs, err := languages.List(profileID)
+	if err != nil {
+		return err
+	}
+	for _, l := range langs {
+		data.Languages = append(data.Languages, templates.LanguageEntry{Language: l.Language, Level: languageLevelLabel(l.Level)})
+	}
+	hobs, err := hobbies.List(profileID)
+	if err != nil {
+		return err
+	}
+	for _, h := range hobs {
+		data.Hobbies = append(data.Hobbies, templates.HobbyEntry{Name: h.Name})
+	}
+	return nil
 }

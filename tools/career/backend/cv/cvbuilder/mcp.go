@@ -56,7 +56,7 @@ func RegisterGetPersonaCvDefaults(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_persona_cv_defaults",
 		Description: "Get a persona's own current data (name, headline, summary, location, external links, skills, " +
-			"experience) already shaped as render_cv_document's own 'data' argument — the exact starting point the human-facing " +
+			"experience, education, courses, languages, hobbies) already shaped as render_cv_document's own 'data' argument — the exact starting point the human-facing " +
 			"CV Builder wizard itself uses. Call this before render_cv_document, then tailor the result (rewrite the headline/" +
 			"summary, reorder or trim skills/experience) to fit a specific job before rendering — never invent a skill, " +
 			"employer, title, or dates that aren't already present here.",
@@ -94,6 +94,10 @@ type CvDocumentDataArgs struct {
 	ExternalLinks []templates.ExternalLink    `json:"externalLinks,omitempty" jsonschema:"list of {platform, url} pairs, e.g. LinkedIn/GitHub/portfolio links"`
 	Skills        []string                    `json:"skills,omitempty" jsonschema:"list of skill strings — when tailoring for a specific job, include (and lead with) the ones that job's own description actually asks for"`
 	Experience    []templates.ExperienceEntry `json:"experience,omitempty" jsonschema:"list of past roles ({company, title, startDate, endDate, description}) — when tailoring for a specific job, reorder so the most relevant roles lead, and omit ones that don't help; NEVER invent an employer, title, or dates not already present in the persona's own real data"`
+	Education     []templates.EducationEntry  `json:"education,omitempty" jsonschema:"list of schools and degrees ({institution, degree, fieldOfStudy, startDate, endDate (empty = still studying), description}) — NEVER invent an institution, a degree or dates not already present in the persona's own real data"`
+	Courses       []templates.CourseEntry     `json:"courses,omitempty" jsonschema:"list of courses and certificates ({title, provider, completedDate}) — when tailoring for a specific job, keep the relevant ones; NEVER invent one"`
+	Languages     []templates.LanguageEntry   `json:"languages,omitempty" jsonschema:"list of languages ({language, level}), the level as shown on a CV, e.g. 'Native', 'C1', 'B2' — NEVER invent a language or raise a level"`
+	Hobbies       []templates.HobbyEntry      `json:"hobbies,omitempty" jsonschema:"list of hobbies or interests ({name}) — optional: leave them out when they do not help for the job; NEVER invent one"`
 }
 
 // ToCvData converts to the internal render/storage shape — a plain
@@ -108,6 +112,10 @@ func (a CvDocumentDataArgs) ToCvData() templates.CvData {
 		ExternalLinks: a.ExternalLinks,
 		Skills:        a.Skills,
 		Experience:    a.Experience,
+		Education:     a.Education,
+		Courses:       a.Courses,
+		Languages:     a.Languages,
+		Hobbies:       a.Hobbies,
 	}
 }
 

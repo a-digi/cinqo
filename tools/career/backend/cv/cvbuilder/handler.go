@@ -125,7 +125,7 @@ func ValidateCvData(data templates.CvData) error {
 			return fmt.Errorf("external link platform names must be plain text — no HTML/markup tags (found one in %q)", l.Platform)
 		}
 	}
-	return nil
+	return validateSections(data)
 }
 
 // TemplatesHandler handles GET cv-documents/templates.

@@ -1,5 +1,6 @@
 import type { CvData } from '../../api'
 import { Field } from '../Field/Field'
+import { sectionsSummary } from './cvSectionRules'
 
 export interface TitleAndReviewStepProps {
   title: string
@@ -8,7 +9,7 @@ export interface TitleAndReviewStepProps {
   templateName: string
 }
 
-// Wizard step 5 (final) — name it, glance over what's about to be
+// Wizard step 7 (final) — name it, glance over what's about to be
 // generated, then Generate (CvBuilderPage's own button, outside this
 // component — this step is display/input only, no submit action of
 // its own).
@@ -26,6 +27,7 @@ export function TitleAndReviewStep({ title, onTitleChange, data, templateName }:
           {data.skills.length} skill{data.skills.length === 1 ? '' : 's'} · {data.experience.length} experience entr
           {data.experience.length === 1 ? 'y' : 'ies'}
         </p>
+        {sectionsSummary(data) !== '' && <p className="mt-1 text-xs text-gray-500">{sectionsSummary(data)}</p>}
       </div>
     </div>
   )

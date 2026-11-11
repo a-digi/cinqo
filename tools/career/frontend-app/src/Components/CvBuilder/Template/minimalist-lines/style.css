@@ -44,8 +44,8 @@ p.skills {
 }
 .entry {
   margin-bottom: 14px;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 .entry-title {
   font-weight: 600;
@@ -75,4 +75,28 @@ p.skills {
 .cv-header-text {
   flex: 1;
   min-width: 0;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.entry-title,
+.entry-company,
+.entry-meta {
+  break-after: avoid;
+  page-break-after: avoid;
 }

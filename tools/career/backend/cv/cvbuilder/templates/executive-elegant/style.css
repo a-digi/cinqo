@@ -5,10 +5,30 @@ body {
   margin: 0;
   padding: 0 44px;
 }
-h1 { font-size: 21pt; letter-spacing: 0.03em; margin: 0 0 4px 0; text-align: center; }
-.headline { font-size: 11.5pt; color: #555; text-align: center; margin: 0 0 6px 0; }
-.contact { font-size: 9.5pt; color: #666; text-align: center; margin: 0 0 6px 0; border-top: 1px solid #cccccc; border-bottom: 1px solid #cccccc; padding: 6px 0; }
-.contact span { margin: 0 8px; }
+h1 {
+  font-size: 21pt;
+  letter-spacing: 0.03em;
+  margin: 0 0 4px 0;
+  text-align: center;
+}
+.headline {
+  font-size: 11.5pt;
+  color: #555;
+  text-align: center;
+  margin: 0 0 6px 0;
+}
+.contact {
+  font-size: 9.5pt;
+  color: #666;
+  text-align: center;
+  margin: 0 0 6px 0;
+  border-top: 1px solid #cccccc;
+  border-bottom: 1px solid #cccccc;
+  padding: 6px 0;
+}
+.contact span {
+  margin: 0 8px;
+}
 
 h2 {
   font-size: 11pt;
@@ -18,12 +38,37 @@ h2 {
   text-align: center;
   margin: 18px 0 8px 0;
 }
-p.summary { margin: 0; line-height: 1.6; text-align: center; }
-p.skills { margin: 0; line-height: 1.6; text-align: center; }
-.entry { margin-bottom: 12px; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { font-weight: bold; text-align: center; }
-.entry-meta { color: #666; font-size: 9.5pt; font-style: italic; text-align: center; }
-.entry-desc { margin: 4px auto 0 auto; line-height: 1.5; max-width: 480px; text-align: center; }
+p.summary {
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+p.skills {
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+.entry {
+  margin-bottom: 12px;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.entry-title {
+  font-weight: bold;
+  text-align: center;
+}
+.entry-meta {
+  color: #666;
+  font-size: 9.5pt;
+  font-style: italic;
+  text-align: center;
+}
+.entry-desc {
+  margin: 4px auto 0 auto;
+  line-height: 1.5;
+  max-width: 480px;
+  text-align: center;
+}
 
 .profile-photo {
   width: 100px;
@@ -41,4 +86,28 @@ p.skills { margin: 0; line-height: 1.6; text-align: center; }
 .cv-header-text {
   flex: 1;
   min-width: 0;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.entry-title,
+.entry-company,
+.entry-meta {
+  break-after: avoid;
+  page-break-after: avoid;
 }

@@ -15,7 +15,7 @@
       </div>
       {{if .PhotoDataURI}}<img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />{{end}}
     </div>
-    <div class="duo">
+    <div class="duo{{if not .Summary}} duo-single{{end}}">
       {{if .Summary}}
       <div class="section section-summary col-main">
         <h2>Summary</h2>

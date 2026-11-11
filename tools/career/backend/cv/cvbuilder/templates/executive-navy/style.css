@@ -1,6 +1,8 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Georgia, 'Times New Roman', serif;
   color: #1c1c1c;
   font-size: 10.3pt;
   line-height: 1.45;
@@ -11,37 +13,168 @@ body {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-h1, h2, p, ul { margin: 0; padding: 0; }
-ul { list-style: none; }
-.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
-.contact { display: flex; flex-wrap: wrap; }
-.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { grid-area: title; }
-.entry-company { grid-area: company; }
-.entry-meta { grid-area: meta; }
-.entry-desc { grid-area: desc; white-space: pre-line; }
-.summary { white-space: pre-line; }
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+.profile-photo {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+}
+.entry {
+  display: grid;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.entry-title {
+  grid-area: title;
+}
+.entry-company {
+  grid-area: company;
+}
+.entry-meta {
+  grid-area: meta;
+}
+.entry-desc {
+  grid-area: desc;
+  white-space: pre-line;
+}
+.summary {
+  white-space: pre-line;
+}
 /* stacked entry: title + date on one line */
-.entry { grid-template-columns: 1fr auto; column-gap: 16px;
-  grid-template-areas: "title meta" "company company" "desc desc"; }
+.entry {
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  grid-template-areas: 'title meta' 'company company' 'desc desc';
+}
 
-.head { display: flex; align-items: center; justify-content: space-between; gap: 28px; background: #14274e; color: #fff;
-  padding: 32px 36px; border-bottom: 4px solid #c9a227; margin-bottom: 6px; }
-h1 { font-size: 25pt; font-weight: 400; text-transform: uppercase; letter-spacing: 0.1em; line-height: 1.12; }
-.headline { margin-top: 8px; font-style: italic; font-size: 12.5pt; color: #e5c76b; }
-.contact { gap: 3px 20px; margin-top: 16px; font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 8.5pt; letter-spacing: 0.05em; color: #cbd5e1; }
-.profile-photo { width: 92px; height: 116px; border: 1px solid #c9a227; padding: 4px; background: #14274e; }
-h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.2em; color: #14274e; font-weight: 700;
-  margin: 28px 0 14px; padding-bottom: 6px; border-bottom: 3px double #c9a227; }
-.summary { line-height: 1.7; font-size: 10.5pt; color: #333; }
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  background: #14274e;
+  color: #fff;
+  padding: 32px 36px;
+  border-bottom: 4px solid #c9a227;
+  margin-bottom: 6px;
+}
+h1 {
+  font-size: 25pt;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  line-height: 1.12;
+}
+.headline {
+  margin-top: 8px;
+  font-style: italic;
+  font-size: 12.5pt;
+  color: #e5c76b;
+}
+.contact {
+  gap: 3px 20px;
+  margin-top: 16px;
+  font-family: 'Avenir Next', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 8.5pt;
+  letter-spacing: 0.05em;
+  color: #cbd5e1;
+}
+.profile-photo {
+  width: 92px;
+  height: 116px;
+  border: 1px solid #c9a227;
+  padding: 4px;
+  background: #14274e;
+}
+h2 {
+  font-size: 10.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #14274e;
+  font-weight: 700;
+  margin: 28px 0 14px;
+  padding-bottom: 6px;
+  border-bottom: 3px double #c9a227;
+}
+.summary {
+  line-height: 1.7;
+  font-size: 10.5pt;
+  color: #333;
+}
 
-.entry { grid-template-columns: 118px 1fr; column-gap: 18px;
-  grid-template-areas: "meta title" "meta company" "meta desc"; }
+.entry {
+  grid-template-columns: 118px 1fr;
+  column-gap: 18px;
+  grid-template-areas: 'meta title' 'meta company' 'meta desc';
+}
 
-.entry { margin-bottom: 17px; }
-.entry-meta { font-style: italic; color: #6b5a1e; font-size: 9.8pt; padding-top: 1px; }
-.entry-title { font-size: 11.5pt; font-weight: 700; color: #14274e; }
-.entry-company { font-style: italic; color: #444; font-size: 10.3pt; }
-.entry-desc { margin-top: 5px; color: #333; line-height: 1.6; font-size: 10pt; }
-.skills li { display: inline; font-size: 10pt; }
-.skills li:not(:last-child)::after { content: "  \25C6  "; color: #c9a227; font-size: 6.5pt; vertical-align: 1px; }
+.entry {
+  margin-bottom: 17px;
+}
+.entry-meta {
+  font-style: italic;
+  color: #6b5a1e;
+  font-size: 9.8pt;
+  padding-top: 1px;
+}
+.entry-title {
+  font-size: 11.5pt;
+  font-weight: 700;
+  color: #14274e;
+}
+.entry-company {
+  font-style: italic;
+  color: #444;
+  font-size: 10.3pt;
+}
+.entry-desc {
+  margin-top: 5px;
+  color: #333;
+  line-height: 1.6;
+  font-size: 10pt;
+}
+.skills li {
+  display: inline;
+  font-size: 10pt;
+}
+.skills li:not(:last-child)::after {
+  content: '  \25C6  ';
+  color: #c9a227;
+  font-size: 6.5pt;
+  vertical-align: 1px;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* The entry of this design is a grid (the dates beside the text). Chrome ignores "avoid" between the rows of a grid, and "break-after: avoid" on its items makes
+   it move the whole entry to the next page, so a title line cannot be told to stay with its description here: when an entry starts at the very bottom of a page,
+   its title line can end the page with the description on the next one. That is the price of no big gaps; a grid entry that keeps its head together needs a
+   head wrapper in the markup of the design (plan 251, step 4). */

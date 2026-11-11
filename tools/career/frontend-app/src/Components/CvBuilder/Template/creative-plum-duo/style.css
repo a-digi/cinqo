@@ -42,8 +42,8 @@ ul {
 }
 .entry {
   display: grid;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 .entry-title {
   grid-area: title;
@@ -166,3 +166,25 @@ h2::before {
   border-radius: 8px;
   margin: 0 6px 7px 0;
 }
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* The entry of this design is a grid (the dates beside the text). Chrome ignores "avoid" between the rows of a grid, and "break-after: avoid" on its items makes
+   it move the whole entry to the next page, so a title line cannot be told to stay with its description here: when an entry starts at the very bottom of a page,
+   its title line can end the page with the description on the next one. That is the price of no big gaps; a grid entry that keeps its head together needs a
+   head wrapper in the markup of the design (plan 251, step 4). */

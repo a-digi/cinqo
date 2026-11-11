@@ -1905,6 +1905,34 @@ export interface CvExperienceEntry {
   description: string
 }
 
+// The profile's own sections on a CV (plan 251). The backend leaves an empty list out, and a CV stored before they existed has none of these keys, so they are
+// optional here; the wizard keeps them as they come (every step edits `{ ...data, field }`).
+export interface CvEducationEntry {
+  institution: string
+  degree: string
+  fieldOfStudy: string
+  startDate: string
+  // '' means still studying
+  endDate: string
+  description: string
+}
+
+export interface CvCourseEntry {
+  title: string
+  provider: string
+  completedDate: string
+}
+
+export interface CvLanguageEntry {
+  language: string
+  // as shown on a CV: 'Native', 'C1', 'B2'… (free text)
+  level: string
+}
+
+export interface CvHobbyEntry {
+  name: string
+}
+
 export interface CvData {
   fullName: string
   headline: string
@@ -1913,6 +1941,10 @@ export interface CvData {
   externalLinks: CvExternalLink[]
   skills: string[]
   experience: CvExperienceEntry[]
+  education?: CvEducationEntry[]
+  courses?: CvCourseEntry[]
+  languages?: CvLanguageEntry[]
+  hobbies?: CvHobbyEntry[]
 }
 
 export interface CvTemplate {

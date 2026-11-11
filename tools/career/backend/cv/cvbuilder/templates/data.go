@@ -23,6 +23,40 @@ type CvData struct {
 	ExternalLinks []ExternalLink    `json:"externalLinks"`
 	Skills        []string          `json:"skills"`
 	Experience    []ExperienceEntry `json:"experience"`
+	// The four sections below (plan 251) come from the profile, are all optional and are left out of the JSON when empty: a CV stored before they existed has
+	// none of these keys and renders exactly as it did.
+	Education []EducationEntry `json:"education,omitempty"`
+	Courses   []CourseEntry    `json:"courses,omitempty"`
+	Languages []LanguageEntry  `json:"languages,omitempty"`
+	Hobbies   []HobbyEntry     `json:"hobbies,omitempty"`
+}
+
+// EducationEntry is one school, degree or study of the person. The dates are free text like ExperienceEntry's; an empty EndDate means still studying.
+type EducationEntry struct {
+	Institution  string `json:"institution"`
+	Degree       string `json:"degree"`
+	FieldOfStudy string `json:"fieldOfStudy"`
+	StartDate    string `json:"startDate"`
+	EndDate      string `json:"endDate"` // "" means "present"
+	Description  string `json:"description"`
+}
+
+// CourseEntry is one course or certificate; only what a CV line shows (the profile's description and credential address are not carried over).
+type CourseEntry struct {
+	Title         string `json:"title"`
+	Provider      string `json:"provider"`
+	CompletedDate string `json:"completedDate"`
+}
+
+// LanguageEntry is one language with its level as it is shown ("Native", "C1", "B2"...); the level is free text, so the person can write "fluent".
+type LanguageEntry struct {
+	Language string `json:"language"`
+	Level    string `json:"level"`
+}
+
+// HobbyEntry is one hobby or interest, by name.
+type HobbyEntry struct {
+	Name string `json:"name"`
 }
 
 type ExternalLink struct {

@@ -14,6 +14,7 @@ import {
 } from '../../api'
 import { PersonaStep } from './PersonaStep'
 import { TemplateStep } from './TemplateStep'
+import { MoreSectionsStep } from './MoreSectionsStep'
 import { PersonalDetailsStep } from './PersonalDetailsStep'
 import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
@@ -32,12 +33,13 @@ const STEPS = [
   { label: 'Personal Details' },
   { label: 'Skills' },
   { label: 'Experience' },
+  { label: 'Education & more' },
   { label: 'Title & Review' },
 ] as const
 
 // CvBuilderPage — its own dedicated route (per your own instruction),
 // separate from the CV Documents list page, gathering CvData across a
-// fixed 6-step wizard rather than one single screen with a persistent
+// fixed 7-step wizard rather than one single screen with a persistent
 // sidebar. No menu entry of its own — reached only via CvDocumentsPage's
 // own "+ New CV" (?personaId=) and "Edit" (?id=) actions, same
 // "reachable, but menu-less" convention JobDetailsPage.tsx already
@@ -47,7 +49,7 @@ const STEPS = [
 // confirmed by reading JobDetailsPage.tsx directly.
 //
 // Still one single CvData built up across steps, submitted whole in
-// ONE POST at the very end (step 5's own Generate) — the wizard is
+// ONE POST at the very end (the last step's own Generate) — the wizard is
 // purely a client-side data-gathering UX, not a multi-request flow;
 // nothing here calls the backend except the initial load (persona
 // defaults or an existing document) and the final submit. See
@@ -365,7 +367,8 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
       {step === 2 && cvData && <PersonalDetailsStep data={cvData} onChange={setCvData} />}
       {step === 3 && cvData && <SkillsStep data={cvData} onChange={setCvData} />}
       {step === 4 && cvData && <ExperienceStep data={cvData} onChange={setCvData} />}
-      {step === 5 && cvData && <TitleAndReviewStep title={title} onTitleChange={setTitle} data={cvData} templateName={templateName} />}
+      {step === 5 && cvData && <MoreSectionsStep data={cvData} onChange={setCvData} />}
+      {step === 6 && cvData && <TitleAndReviewStep title={title} onTitleChange={setTitle} data={cvData} templateName={templateName} />}
 
       <div className="mt-6 flex items-center justify-between">
         <button

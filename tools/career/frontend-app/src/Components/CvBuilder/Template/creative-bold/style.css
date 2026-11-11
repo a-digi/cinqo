@@ -46,8 +46,8 @@ p.summary {
 }
 .entry {
   margin-bottom: 10px;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  break-inside: auto;
+  page-break-inside: auto;
 }
 .entry-title {
   font-weight: bold;
@@ -88,4 +88,34 @@ p.summary {
 .cv-header-text {
   flex: 1;
   min-width: 0;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.entry-title,
+.entry-company,
+.entry-meta {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* This design's headings are inline-blocks (so the underline is only as wide as the text); an inline box ignores "keep with next". A block with a
+   content-sized width looks the same and keeps the heading with what follows it. */
+h2 {
+  display: block;
+  width: fit-content;
 }

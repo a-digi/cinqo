@@ -1,7 +1,16 @@
-* { box-sizing: border-box; }
-:root { --a: #3f6b53; --d: #1f2a24; --t: #f0f5f2; --l: #a7c4b3; --mute: #6b7280; --line: #e5e7eb; }
+* {
+  box-sizing: border-box;
+}
+:root {
+  --a: #3f6b53;
+  --d: #1f2a24;
+  --t: #f0f5f2;
+  --l: #a7c4b3;
+  --mute: #6b7280;
+  --line: #e5e7eb;
+}
 body {
-  font-family: "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
+  font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
   color: #1f2937;
   font-size: 10pt;
   line-height: 1.45;
@@ -12,33 +21,169 @@ body {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-h1, h2, p, ul { margin: 0; padding: 0; }
-ul { list-style: none; }
-.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
-.contact { display: flex; flex-wrap: wrap; }
-.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { grid-area: title; }
-.entry-company { grid-area: company; }
-.entry-meta { grid-area: meta; }
-.entry-desc { grid-area: desc; white-space: pre-line; }
-.summary { white-space: pre-line; line-height: 1.65; font-size: 10.3pt; color: #374151; }
-.entry-title { font-size: 11.3pt; font-weight: 700; color: var(--d); }
-.entry-company { font-size: 10pt; color: var(--a); font-weight: 500; }
-.entry-meta { font-size: 8.8pt; color: var(--mute); padding-top: 3px; }
-.entry-desc { margin-top: 5px; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+.profile-photo {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+}
+.entry {
+  display: grid;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.entry-title {
+  grid-area: title;
+}
+.entry-company {
+  grid-area: company;
+}
+.entry-meta {
+  grid-area: meta;
+}
+.entry-desc {
+  grid-area: desc;
+  white-space: pre-line;
+}
+.summary {
+  white-space: pre-line;
+  line-height: 1.65;
+  font-size: 10.3pt;
+  color: #374151;
+}
+.entry-title {
+  font-size: 11.3pt;
+  font-weight: 700;
+  color: var(--d);
+}
+.entry-company {
+  font-size: 10pt;
+  color: var(--a);
+  font-weight: 500;
+}
+.entry-meta {
+  font-size: 8.8pt;
+  color: var(--mute);
+  padding-top: 3px;
+}
+.entry-desc {
+  margin-top: 5px;
+  color: #4b5563;
+  line-height: 1.55;
+  font-size: 9.7pt;
+}
 
-.h { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; border-top: 7px solid var(--d); padding-top: 20px; }
-h1 { font-size: 34pt; font-weight: 800; text-transform: uppercase; letter-spacing: -0.005em; line-height: 1; color: var(--d); }
-.headline { margin-top: 12px; font-size: 13pt; color: var(--a); font-style: italic; }
-.profile-photo { width: 88px; height: 110px; border: 1px solid var(--d); padding: 4px; background: #fff; }
-.contact { gap: 2px 22px; margin-top: 18px; padding: 9px 0; border-top: 1px solid var(--d); border-bottom: 1px solid var(--d);
-  font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.14em; color: #333; }
+.h {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  border-top: 7px solid var(--d);
+  padding-top: 20px;
+}
+h1 {
+  font-size: 34pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--d);
+}
+.headline {
+  margin-top: 12px;
+  font-size: 13pt;
+  color: var(--a);
+  font-style: italic;
+}
+.profile-photo {
+  width: 88px;
+  height: 110px;
+  border: 1px solid var(--d);
+  padding: 4px;
+  background: #fff;
+}
+.contact {
+  gap: 2px 22px;
+  margin-top: 18px;
+  padding: 9px 0;
+  border-top: 1px solid var(--d);
+  border-bottom: 1px solid var(--d);
+  font-size: 7.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #333;
+}
 
-.profile-photo { border-radius: 2px; }
-h2 { font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.26em; color: var(--mute); font-weight: 700; margin: 30px 0 12px; }
-.entry { grid-template-columns: 116px 1fr; column-gap: 18px; margin-bottom: 16px;
-  grid-template-areas: "meta title" "meta company" "meta desc"; }
-.entry-meta { font-variant-numeric: tabular-nums; }
-.skills { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 14px; }
-.skills li { font-size: 9.6pt; }
-.skills li::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--a); margin-right: 8px; vertical-align: 1px; }
+.profile-photo {
+  border-radius: 2px;
+}
+h2 {
+  font-size: 7.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--mute);
+  font-weight: 700;
+  margin: 30px 0 12px;
+}
+.entry {
+  grid-template-columns: 116px 1fr;
+  column-gap: 18px;
+  margin-bottom: 16px;
+  grid-template-areas: 'meta title' 'meta company' 'meta desc';
+}
+.entry-meta {
+  font-variant-numeric: tabular-nums;
+}
+.skills {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px 14px;
+}
+.skills li {
+  font-size: 9.6pt;
+}
+.skills li::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--a);
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* The entry of this design is a grid (the dates beside the text). Chrome ignores "avoid" between the rows of a grid, and "break-after: avoid" on its items makes
+   it move the whole entry to the next page, so a title line cannot be told to stay with its description here: when an entry starts at the very bottom of a page,
+   its title line can end the page with the description on the next one. That is the price of no big gaps; a grid entry that keeps its head together needs a
+   head wrapper in the markup of the design (plan 251, step 4). */

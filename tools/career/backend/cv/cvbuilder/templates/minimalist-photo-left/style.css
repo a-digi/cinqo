@@ -1,6 +1,8 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
-  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: 'Avenir Next', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   color: #262626;
   font-size: 9.8pt;
   line-height: 1.45;
@@ -11,36 +13,161 @@ body {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-h1, h2, p, ul { margin: 0; padding: 0; }
-ul { list-style: none; }
-.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
-.contact { display: flex; flex-wrap: wrap; }
-.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { grid-area: title; }
-.entry-company { grid-area: company; }
-.entry-meta { grid-area: meta; }
-.entry-desc { grid-area: desc; white-space: pre-line; }
-.summary { white-space: pre-line; }
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+.profile-photo {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+}
+.entry {
+  display: grid;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.entry-title {
+  grid-area: title;
+}
+.entry-company {
+  grid-area: company;
+}
+.entry-meta {
+  grid-area: meta;
+}
+.entry-desc {
+  grid-area: desc;
+  white-space: pre-line;
+}
+.summary {
+  white-space: pre-line;
+}
 /* stacked entry: title + date on one line */
-.entry { grid-template-columns: 1fr auto; column-gap: 16px;
-  grid-template-areas: "title meta" "company company" "desc desc"; }
+.entry {
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  grid-template-areas: 'title meta' 'company company' 'desc desc';
+}
 
-.head { display: flex; align-items: center; gap: 20px; padding-bottom: 20px; border-bottom: 0.75px solid #d4d4d4; }
-.profile-photo { width: 72px; height: 72px; border-radius: 50%; }
-h1 { font-size: 21pt; font-weight: 300; letter-spacing: 0.005em; line-height: 1.1; }
-.headline { margin-top: 3px; font-size: 10.5pt; color: #737373; }
-.contact { gap: 2px 16px; margin-top: 8px; font-size: 8.6pt; color: #a3a3a3; }
-h2 { font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.22em; color: #a3a3a3; font-weight: 600; padding-top: 3px; }
+.head {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 20px;
+  border-bottom: 0.75px solid #d4d4d4;
+}
+.profile-photo {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+}
+h1 {
+  font-size: 21pt;
+  font-weight: 300;
+  letter-spacing: 0.005em;
+  line-height: 1.1;
+}
+.headline {
+  margin-top: 3px;
+  font-size: 10.5pt;
+  color: #737373;
+}
+.contact {
+  gap: 2px 16px;
+  margin-top: 8px;
+  font-size: 8.6pt;
+  color: #a3a3a3;
+}
+h2 {
+  font-size: 7.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: #a3a3a3;
+  font-weight: 600;
+  padding-top: 3px;
+}
 
-.section { display: grid; grid-template-columns: 112px 1fr; column-gap: 20px; margin-top: 24px; }
-.section > h2 { grid-column: 1; grid-row: 1; margin: 0; }
-.section > :not(h2) { grid-column: 2; }
+.section {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  column-gap: 20px;
+  margin-top: 24px;
+}
+.section > h2 {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+}
+.section > :not(h2) {
+  grid-column: 2;
+}
 
-.summary { line-height: 1.7; font-size: 10pt; color: #404040; }
-.entry { margin-bottom: 15px; }
-.entry-title { font-size: 10.6pt; font-weight: 600; }
-.entry-company { font-size: 9.6pt; color: #737373; }
-.entry-meta { font-size: 8.6pt; color: #a3a3a3; padding-top: 2px; }
-.entry-desc { margin-top: 4px; color: #525252; line-height: 1.6; font-size: 9.5pt; }
-.skills li { display: inline; font-size: 9.6pt; color: #404040; }
-.skills li:not(:last-child)::after { content: "  \00B7  "; color: #a3a3a3; }
+.summary {
+  line-height: 1.7;
+  font-size: 10pt;
+  color: #404040;
+}
+.entry {
+  margin-bottom: 15px;
+}
+.entry-title {
+  font-size: 10.6pt;
+  font-weight: 600;
+}
+.entry-company {
+  font-size: 9.6pt;
+  color: #737373;
+}
+.entry-meta {
+  font-size: 8.6pt;
+  color: #a3a3a3;
+  padding-top: 2px;
+}
+.entry-desc {
+  margin-top: 4px;
+  color: #525252;
+  line-height: 1.6;
+  font-size: 9.5pt;
+}
+.skills li {
+  display: inline;
+  font-size: 9.6pt;
+  color: #404040;
+}
+.skills li:not(:last-child)::after {
+  content: '  \00B7  ';
+  color: #a3a3a3;
+}
+
+/* Page flow (plan 251): a long entry may go on to the next page (a whole entry that did not fit used to jump over and leave a big gap at the bottom of
+   the page), but one or two lines are never left alone, a heading stays with what follows it, and an entry's title line stays with its first lines.
+   The person's line breaks in a description stay line breaks. */
+.entry {
+  orphans: 3;
+  widows: 3;
+}
+.entry-desc,
+.summary {
+  white-space: pre-line;
+  orphans: 3;
+  widows: 3;
+}
+h2 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+/* The entry of this design is a grid (the dates beside the text). Chrome ignores "avoid" between the rows of a grid, and "break-after: avoid" on its items makes
+   it move the whole entry to the next page, so a title line cannot be told to stay with its description here: when an entry starts at the very bottom of a page,
+   its title line can end the page with the description on the next one. That is the price of no big gaps; a grid entry that keeps its head together needs a
+   head wrapper in the markup of the design (plan 251, step 4). */
