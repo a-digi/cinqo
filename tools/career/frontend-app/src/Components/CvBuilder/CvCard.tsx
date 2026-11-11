@@ -1,9 +1,10 @@
+import { useState } from 'react'
 import { ActionMenu } from '../../Shared/ActionMenu/ActionMenu'
 import { EyeIcon, PencilIcon, SparkleIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvPreview } from './CvPreview'
 import { createdLabel } from './cvCardRules'
-import type { CvDocument, Persona } from '../../api'
+import { downloadCvExport, type CvDocument, type Persona } from '../../api'
 import { XIcon } from '../../Shared/Icons/icons'
 import { attachablePersonas } from './cvPersonaRules'
 
@@ -47,10 +48,31 @@ export function CvCard({
   // The CV the AI just created: ringed, with no entrance animation.
   highlighted?: boolean
 }) {
+  // plan 251, step 5: the CV as a Markdown file, made on the spot by the backend; available on every page that shows CV cards.
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const exportAs = () => {
+    setExporting(true)
+    setExportError('')
+    downloadCvExport(doc, 'md')
+      .catch((err: unknown) => {
+        setExportError(err instanceof Error ? err.message : 'The CV could not be exported.')
+      })
+      .finally(() => {
+        setExporting(false)
+      })
+  }
   const controls = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
   const created = createdLabel(doc.createdAt)
   const attachable = allPersonas && onAttach ? attachablePersonas(doc, allPersonas) : []
   const menuItems = [
+    {
+      key: 'export-md',
+      label: exporting ? 'Preparing Markdown…' : 'Download as Markdown',
+      title: 'Download this CV as a Markdown (.md) file',
+      disabled: exporting,
+      onClick: exportAs,
+    },
     onRename && { key: 'rename', label: 'Rename', onClick: onRename },
     onComments && { key: 'comments', label: 'Comments', onClick: onComments },
     onDelete && { key: 'delete', label: 'Delete', icon: <TrashIcon />, variant: 'danger' as const, onClick: onDelete },
@@ -97,6 +119,11 @@ export function CvCard({
       <p className="mt-2 line-clamp-2 break-words text-sm font-medium text-gray-900" title={doc.title}>
         {doc.title}
       </p>
+      {exportError && (
+        <p role="alert" className="mt-1 text-xs text-red-700">
+          {exportError}
+        </p>
+      )}
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
         <span className="rounded-full px-2 py-0.5 font-medium" style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}>
           {templateName}

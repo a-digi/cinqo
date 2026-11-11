@@ -2,6 +2,7 @@
 import type { DeleteAnswer } from './Components/JobsPage/deleteRules'
 import type { CrawlerSettings, EditableCrawlerSettings, IgnoredList } from './Components/SettingsPage/crawlerRules'
 import type { BatchStatus, SkippedJob } from './Components/JobsPage/recrawlRules'
+import { exportFileName, type CvExportFormat } from './Components/CvBuilder/cvExportRules'
 // (http.go, step 5), the human-facing mirror of steps 3/4/8/10's own
 // MCP tools. Same PROXY_BASE convention browser's own api.ts already
 // established: /api/v1/tools/{slug}/proxy/{path_suffix}.
@@ -1167,6 +1168,24 @@ export async function unlinkJobCv(jobId: string): Promise<void> {
     const text = await res.text().catch(() => '')
     throw new Error(text.trim() || `failed to remove the CV (${res.status})`)
   }
+}
+
+// downloadCvExport saves a stored CV as a file (plan 251, step 5): the backend makes it on the spot from the CV's own data (nothing is kept) and the browser
+// saves it under the name the backend gave it. A failure says what the backend said.
+export async function downloadCvExport(doc: { id: string; title: string }, format: CvExportFormat): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/export?cvDocumentId=${encodeURIComponent(doc.id)}&format=${format}`, {
+    credentials: 'include',
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to export the CV (${String(res.status)})`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = exportFileName(res.headers.get('Content-Disposition'), doc.title, format)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 // mediaDownloadUrl builds a plain, clickable link to a Media file's

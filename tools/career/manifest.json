@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.873",
+  "version": "0.0.874",
   "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -843,6 +843,11 @@
     {
       "method": "POST",
       "path_suffix": "cv-documents/preview",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/export",
       "required_scope": "tool:career:cv_documents"
     },
     {

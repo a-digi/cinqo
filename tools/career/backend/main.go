@@ -351,6 +351,7 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-documents/persona-defaults", cvbuilder.PersonaDefaultsHandler)
 	http.HandleFunc("/cv-documents/photo-status", cvbuilder.PhotoStatusHandler)
 	http.HandleFunc("/cv-documents/preview", cvbuilder.PreviewHandler)
+	http.HandleFunc("/cv-documents/export", cvbuilder.ExportHandler)
 	http.HandleFunc("/cv-documents/personas", cvbuilder.PersonaLinksHandler)
 	http.HandleFunc("/cv-ai-runs", cvbuilder.CvAiRunsHandler)
 	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
