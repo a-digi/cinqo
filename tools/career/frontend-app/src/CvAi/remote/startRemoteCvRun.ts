@@ -5,11 +5,12 @@ import type { AiChoice } from '../../Cinqo/Platform/aiChoice'
 import { cvAiConversationTitle } from '../cvAiRules'
 import { decidePhoto } from '../photoDecision'
 import { buildCvAiPrompt } from './buildCvAiPrompt'
+import { finishRemoteCvRunWithApi } from './finishRemoteRun'
 import { CV_AI_RUN_TOOLS, RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from './cvAiTools'
 
 // The remote driver of "Create a CV with AI" (step 115; split out in plan 253): for a model that follows a long prompt and calls tools well. One hidden conversation,
-// restricted to the run's tools, one prompt that walks the model through reading the persona, choosing a design, rendering, making the PDF and saving. This is the code
-// that used to be the body of useCvAiRuns.start, unchanged; the run list, the reload and the watching of the turn stay with the caller.
+// restricted to the run's tools, one prompt that walks the model through reading the persona, choosing a design, tailoring the data and handing the choice over (plan 256); the
+// page then makes the CV (finishRemoteRun.ts). The run list, the reload and the watching of the turn stay with the caller.
 export interface StartedCvRun {
   runId: string
   // The AI's turn: sent when the caller is ready to watch it; resolves with the model's last message.
@@ -45,5 +46,13 @@ export async function startRemoteCvRun(persona: { id: string; name: string }, fo
     () => false,
   )
   const withPhoto = decidePhoto(profileHasPhoto, focus).attach
-  return { runId, turn: () => sendMessage(conversation.id, buildCvAiPrompt(persona, focus, runId, withPhoto)) }
+  return {
+    runId,
+    // The AI's turn, then the page makes the CV from what the AI handed over (the photo included when it is wanted); a turn whose AI handed nothing over rejects.
+    turn: async () => {
+      const reply = await sendMessage(conversation.id, buildCvAiPrompt(persona, focus, runId, withPhoto))
+      await finishRemoteCvRunWithApi({ id: runId, personaId: persona.id })
+      return reply
+    },
+  }
 }

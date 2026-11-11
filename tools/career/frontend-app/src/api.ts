@@ -2182,6 +2182,8 @@ export interface CvAiRun {
   status: CvAiRunStatus
   // The CV the AI saved; missing until it did (and after that CV was deleted).
   cvDocumentId?: string
+  // What a model-driven run handed over with hand_over_cv (plan 256): the design, the title and the data the page makes the CV from; missing until the AI handed it over.
+  choice?: { templateId: string; title: string; data: CvData }
   error?: string
   createdAt: string
   finishedAt?: string

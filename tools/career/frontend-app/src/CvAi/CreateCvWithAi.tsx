@@ -8,7 +8,6 @@ import { inputClass } from '../Shared/inputClass'
 import { Modal } from '../Shared/Modal/Modal'
 import { SETTINGS_PATH } from '../paths'
 import { CvAiPicker } from './CvAiPicker'
-import { cvAiDriverFor } from './cvAiRunner'
 import { decidePhoto } from './photoDecision'
 
 // The "Create CV with AI" button and its dialog (step 115): the optional note on what the CV is for,
@@ -83,20 +82,17 @@ export function CreateCvWithAi({
       })
   }
 
-  // What the CV will carry, said before Start (plan 256). The model-driven (remote) path cannot add the photo yet, so it says so instead of promising it.
+  // What the CV will carry, said before Start (plan 256): the same for every AI, since the page makes the CV for both drivers.
   const photoDecision = hasPhoto === null ? null : decidePhoto(hasPhoto, focus)
-  const remoteDriver = cvAiDriverFor({ platform: choice.platform, model: choice.model, source: ai.source }) === 'remote'
-  const photoLine = !choice.platform
-    ? ''
-    : remoteDriver
-      ? 'This AI makes the CV without a photo; you can make a CV by hand if you want one with your photo.'
-      : photoDecision === null
-        ? ''
-        : photoDecision.reason === 'photo'
-          ? 'The CV includes your profile photo. Write "without photo" in the note to leave it out.'
-          : photoDecision.reason === 'asked-none'
-            ? 'The CV will have no photo, as you asked.'
-            : 'Your profile has no photo, so the CV has none.'
+  const photoLine =
+    !choice.platform || photoDecision === null
+      ? ''
+      : photoDecision.reason === 'photo'
+        ? 'The CV includes your profile photo. Write "without photo" in the note to leave it out.'
+        : photoDecision.reason === 'asked-none'
+          ? 'The CV will have no photo, as you asked.'
+          : 'Your profile has no photo, so the CV has none.'
+
   const aiText = choice.platform ? `${choice.platform.name}${choice.model ? ` · ${choice.model}` : ''}` : ''
 
   return (

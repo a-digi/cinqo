@@ -1,11 +1,10 @@
 // The message that starts a "create a CV with AI" run for a model that calls tools (step 115; the remote driver, plan 253). The AI
-// reads the persona, chooses ONE template, renders the CV from the persona's own data and saves it
-// with save_persona_cv, which only stores it on the persona of the run. Its last message is one
-// plain sentence, never data. The conversation is hidden and restricted to cvAiTools.ts.
+// reads the persona, chooses ONE template, tailors the persona's own data and hands the choice over with hand_over_cv (plan 256); the page then makes the CV (with the photo when it
+// is wanted). Its last message is one plain sentence, never data. The conversation is hidden and restricted to cvAiTools.ts.
 
 // Which designs the AI should look at (plan 256): the CV is wanted with the person's photo unless the user's wish asks for none (or the profile has none), so a design built to show a
 // photo, that is any design except the "ATS-Friendly" ones (plain layouts meant to have no photo); when there is no photo, an "ATS-Friendly" design. A wish that asks for ATS or
-// a plain design is followed in both cases. The photo itself is not part of the tool path yet (render_cv_document cannot embed it), so the AI only chooses the design.
+// a plain design is followed in both cases. The AI only chooses the design: the photo is added by the application after the AI handed its choice over (hand_over_cv).
 export function designAdvice(withPhoto: boolean): string {
   return withPhoto
     ? 'The CV is wanted WITH the person\'s profile photo: choose a design built to show a photo, that is any design whose category is NOT "ATS-Friendly" (the ATS-Friendly designs are plain layouts meant to have no photo). The only exception: when the user\'s wish asks for an ATS or plain design, choose an "ATS-Friendly" one.'
@@ -25,9 +24,7 @@ export function buildCvAiPrompt(persona: { id: string; name: string }, focus: st
     `3. Call list_cv_templates and choose ONE design that suits this persona (its role and what the CV is for): consider each template's category and bestFor list. ${designAdvice(withPhoto)}`,
     `4. Call get_persona_cv_defaults with personaId ${persona.id}: this is your real starting point (name, headline, summary, location, links, skills, experience).`,
     "5. You may reorder and trim the skills and experience and tighten the headline and summary so the strongest points lead. Never invent a skill, employer, title or date that is not in the persona's data. Every field must be PLAIN TEXT ONLY: no HTML tags or markup of any kind, no markdown.",
-    `6. Call render_cv_document with personaId ${persona.id}, your chosen template id and that data: it returns finished XHTML, you never write HTML or CSS yourself.`,
-    '7. Call generate_pdf with the returned XHTML as the xhtml argument, completely UNCHANGED: do not edit, reformat or retype it, and never write XHTML of your own.',
-    `8. Call save_persona_cv ONCE with runId ${runId}, the same template id, a short title (for example "${persona.name} - CV"), the exact SAME data you passed to render_cv_document, and the uri field of the generate_pdf result, unmodified.`,
+    `6. Call hand_over_cv ONCE, as your last tool call, with runId ${runId}, your chosen template id, a short title (for example "${persona.name} - CV") and the data you decided on. You do NOT render anything and you do NOT make a PDF: the application makes the finished CV (with the person's photo when it is wanted) from what you hand over.`,
     '',
     'Do NOT call any tool that creates, changes or deletes anything else.',
     '',

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCvAiRuns, finishCvAiRun, type CvAiRun } from '../api'
 import { CoreApiError } from '../Cinqo/Http/client'
-import { awaitTurnCompletion, type SendMessageResult } from '../Cinqo/Conversation/conversation'
+import type { SendMessageResult } from '../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { NO_CV_SAVED_MESSAGE } from './cvAiRules'
-import { startCvAiRun } from './cvAiRunner'
+import { resumeCvAiRun, startCvAiRun } from './cvAiRunner'
 
 // The runs of one persona's "create a CV with AI" (step 115): the list, starting a run, and finishing
 // it when the AI's turn ends. Same shape as usePersonaAiRuns: a run is a hidden conversation recorded
@@ -84,7 +84,7 @@ export function useCvAiRuns(personaId: string | null) {
   // Pick up every run that is still generating (after a reload).
   useEffect(() => {
     for (const run of runs) {
-      if (run.status === 'generating') watch(run.id, () => awaitTurnCompletion(run.conversationId))
+      if (run.status === 'generating') watch(run.id, resumeCvAiRun(run))
     }
   }, [runs, watch])
 
