@@ -14,10 +14,9 @@ import (
 	"github.com/a-digi/cinqo/src/localai/hardware"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
-	"github.com/a-digi/cinqo/src/platform/openai"
 )
 
-// chatFunc sends one chat request to an OpenAI-compatible server; the real one is the application's OpenAI client.
+// chatFunc sends one chat request to the model program; the real one is this module's own client (wire.go).
 type chatFunc func(ctx context.Context, client *http.Client, baseURL, token, model string, messages []chatcompleter.Message, tools []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error)
 
 // managedEngine is the local AI's engine: it checks that everything needed is there, starts the model program (through the
@@ -38,10 +37,8 @@ func newManagedEngine(in *installer, sup *supervisor, settings *query.SettingsQu
 		sup:      sup,
 		settings: settings,
 		system:   hardware.Detect,
-		call: func(ctx context.Context, client *http.Client, baseURL, token, model string, messages []chatcompleter.Message, tools []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
-			return openai.Client{}.ChatCompletion(ctx, client, baseURL, token, model, messages, tools)
-		},
-		slot: make(chan struct{}, 1),
+		call:     localChat,
+		slot:     make(chan struct{}, 1),
 	}
 }
 
