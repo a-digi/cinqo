@@ -19,6 +19,8 @@ export const IMPORT_RUN_TOOLS = [
   'cv_import_add_experience',
   'cv_import_add_education',
   'cv_import_finish',
+  'get_cv_import_suggestions',
+  'update_cv_import_suggestions',
 ] as const
 
 export function buildImportPrompt(cvFileId: string, runId: string): string {
@@ -43,7 +45,9 @@ Experience is the most important part to get right. Send EVERY job of the work-e
 Technologies: <the technology list of the job>
 If an answer carries a warning or an error about a description or a count, fix that job (with all of its text) and send it again: the same company, title and start date replaces the earlier one.
 
-Education means schools, universities, degrees, certificates and courses (not jobs). For each entry send institution (required), degree, fieldOfStudy, startDate, endDate and a short description if the CV gives one. Dates must be exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it, and leave endDate empty for something still going on; the end is never before the start. Never invent education the CV does not state. A degree or certificate whose school the CV does not name is still education: send it with institution "Not stated" (never guess a school), and the user can fix it afterwards. Before you call cv_import_finish, look through the CV text once more for education (headings such as Education, Ausbildung, Studium, Abschlüsse, Qualifikationen, Weiterbildung, Certifications), send every entry you find with cv_import_add_education, and only then finish; send none only when the CV has no such section.`
+Education means schools, universities, degrees, certificates and courses (not jobs). For each entry send institution (required), degree, fieldOfStudy, startDate, endDate and a short description if the CV gives one. Dates must be exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it, and leave endDate empty for something still going on; the end is never before the start. Never invent education the CV does not state. A degree or certificate whose school the CV does not name is still education: send it with institution "Not stated" (never guess a school), and the user can fix it afterwards. Before you call cv_import_finish, look through the CV text once more for education (headings such as Education, Ausbildung, Studium, Abschlüsse, Qualifikationen, Weiterbildung, Certifications), send every entry you find with cv_import_add_education, and only then finish; send none only when the CV has no such section.
+
+After the import the user may keep talking with you about the proposal. When they ask what it contains, call get_cv_import_suggestions with runId ${runId} and answer from what it returns, never from memory. When they ask you to add, change or remove something, call get_cv_import_suggestions first, then update_cv_import_suggestions with runId ${runId}, the changes (set a section, update, add or remove a row, each row by its id) and the revision you read as basedOn. These tools only change the suggestions the user is reviewing: nothing is saved to the profile until the user presses Insert, so never say that something was saved. If update_cv_import_suggestions answers that the suggestions are closed, the user has already saved or declined them: say so and change nothing. Say in one or two plain sentences what you changed.`
 }
 
 // The same import as a sequence of short messages, for a model that cannot follow the long one (plan 181, step 9; reworked in plan 208).
