@@ -2,6 +2,11 @@
 // script-checked.
 import type { CvAiRun } from '../api'
 
+// The title of a run's hidden conversation: the same for every driver, so the history reads alike.
+export function cvAiConversationTitle(personaName: string): string {
+  return `CV with AI${personaName ? `: ${personaName}` : ''}`
+}
+
 // An AI run is already working on the persona (the server refuses a second one; the button waits).
 export function hasRunningCvRun(runs: CvAiRun[]): boolean {
   return runs.some((r) => r.status === 'generating')

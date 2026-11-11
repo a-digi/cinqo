@@ -6,7 +6,7 @@
 // read from the CV when the model cannot. Where code reads it reliably (the name, the education lines) it is asked first and the model
 // is not asked at all.
 
-import type { Piece, Verdict } from './askPiece'
+import type { Piece, Verdict } from '../../../Cinqo/Conversation/toolFree/askPiece'
 import { findDateRange, type CvJob, type SplitCv } from '../splitCv'
 
 const ok = <T>(value: T): Verdict<T> => ({ ok: true, value })

@@ -1,4 +1,5 @@
-// askPiece.ts — asks a model one small question and checks what it answers (plan 209, step 3).
+// askPiece.ts — asks a model one small question and checks what it answers (plan 209, step 3; moved here in plan 253, step 3). It belongs to no feature: the CV import's
+// code driver and the CV AI's local driver both use it, so neither imports the other.
 //
 // A piece is one thing the import needs (the name, the persona, the skills, ...): the question to put to the model (its own small piece of
 // the CV, no tools), the check of its answer, and what code can cut out of the CV itself when the model's answer is not usable. runPiece

@@ -2218,6 +2218,18 @@ export async function finishCvAiRun(id: string, outcome: { status: 'ready' } | {
   if (!res.ok) throw new Error((await res.text()).trim() || `failed to finish the CV AI run (${res.status})`)
 }
 
+// attachCvToRun ties a CV that already exists to a generating run (plan 253): what a run driven by code does after it made the CV through createCvDocument. The server
+// accepts only a CV built from the run's own target role that belongs to no other run.
+export async function attachCvToRun(runId: string, cvDocumentId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-ai-runs/attach`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId, cvDocumentId }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to attach the CV to the run (${String(res.status)})`)
+}
+
 export async function deleteCvAiRun(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/cv-ai-runs?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok) throw new Error(`failed to remove the run (${res.status})`)

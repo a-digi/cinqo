@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createCvAiRun, fetchCvAiRuns, finishCvAiRun, type CvAiRun } from '../api'
+import { fetchCvAiRuns, finishCvAiRun, type CvAiRun } from '../api'
 import { CoreApiError } from '../Cinqo/Http/client'
-import { awaitTurnCompletion, createConversation, sendMessage, type SendMessageResult } from '../Cinqo/Conversation/conversation'
+import { awaitTurnCompletion, type SendMessageResult } from '../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
-import { buildCvAiPrompt, cvAiConversationTitle } from './buildCvAiPrompt'
 import { NO_CV_SAVED_MESSAGE } from './cvAiRules'
-import { CV_AI_RUN_TOOLS, RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from './cvAiTools'
+import { startCvAiRun } from './cvAiRunner'
 
 // The runs of one persona's "create a CV with AI" (step 115): the list, starting a run, and finishing
 // it when the AI's turn ends. Same shape as usePersonaAiRuns: a run is a hidden conversation recorded
@@ -89,31 +88,12 @@ export function useCvAiRuns(personaId: string | null) {
     }
   }, [runs, watch])
 
-  // Starts a run. Rejects (with a readable message) when the conversation or the record fails.
+  // Starts a run (the driver is chosen in cvAiRunner). Rejects (with a readable message) when the conversation or the record fails.
   const start = useCallback(
     async (persona: { id: string; name: string }, focus: string, ai: AiChoice) => {
-      if (!ai.platform) throw new Error('No AI platform is available. Choose one in Settings.')
-      const conversation = await createConversation({
-        title: cvAiConversationTitle(persona.name),
-        platformId: ai.platform.id,
-        model: ai.model ?? undefined,
-        hidden: true,
-        // The AI may only use the tools this run needs: the server enforces it, not just the prompt.
-        allowedTools: [...CV_AI_RUN_TOOLS],
-      }).catch((err: unknown) => {
-        if (err instanceof CoreApiError && (err.status === 401 || err.status === 403)) {
-          throw new Error('Ask an admin to grant you access to AI conversations.')
-        }
-        throw err
-      })
-      // The restriction must really be in place before the AI sees a single message.
-      if (!restrictionHolds(conversation.allowedTools, CV_AI_RUN_TOOLS)) {
-        throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
-      }
-      // Recorded before the first message, so a reload in between still has something to resume.
-      const runId = await createCvAiRun(persona.id, conversation.id, focus.trim())
+      const { runId, turn } = await startCvAiRun(persona, focus, ai)
       await reload()
-      watch(runId, () => sendMessage(conversation.id, buildCvAiPrompt(persona, focus, runId)))
+      watch(runId, turn)
     },
     [reload, watch],
   )

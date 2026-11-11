@@ -1,4 +1,4 @@
-// modelJson.ts — the JSON a model wrote, read leniently (plan 209, step 3).
+// modelJson.ts — the JSON a model wrote, read leniently (plan 209, step 3; moved here in plan 253, step 3, shared by the features that ask a model tool-free questions).
 //
 // A small model asked for "this JSON and nothing else" still wraps it in a code fence, adds a sentence before or after it, or stops short.
 // This finds the first complete JSON object or list in its answer and reads it; it never repairs a broken one (a guess about what the model

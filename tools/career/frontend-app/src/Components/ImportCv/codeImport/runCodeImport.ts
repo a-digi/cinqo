@@ -6,7 +6,7 @@
 // invented. Everything that touches the world is injected (ask, store, finish), so the whole flow is testable with a scripted model.
 
 import { jobDescription, splitCv, type CvJob, type SplitCv } from '../splitCv'
-import { runPiece, type PieceOutcome } from './askPiece'
+import { runPiece, type PieceOutcome } from '../../../Cinqo/Conversation/toolFree/askPiece'
 import {
   companyTitlePiece,
   detailsPiece,

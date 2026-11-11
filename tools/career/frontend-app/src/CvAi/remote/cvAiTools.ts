@@ -15,4 +15,4 @@ export const CV_AI_RUN_TOOLS = [
   'save_persona_cv',
 ] as const
 
-export { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../PersonaAi/personaTools'
+export { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'

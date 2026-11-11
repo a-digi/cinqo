@@ -1,4 +1,4 @@
-// The message that starts a "create a CV with AI" run (step 115), and the conversation title. The AI
+// The message that starts a "create a CV with AI" run for a model that calls tools (step 115; the remote driver, plan 253). The AI
 // reads the persona, chooses ONE template, renders the CV from the persona's own data and saves it
 // with save_persona_cv, which only stores it on the persona of the run. Its last message is one
 // plain sentence, never data. The conversation is hidden and restricted to cvAiTools.ts.
@@ -24,8 +24,4 @@ export function buildCvAiPrompt(persona: { id: string; name: string }, focus: st
     '',
     'Your FINAL reply must be ONE short plain sentence for the user that says which template you chose and that the CV was created, for example "I created your CV with the Classic template." Never put the CV data, JSON or markup in the reply. If something fails and you cannot save the CV, say so in that one sentence.',
   ].join('\n')
-}
-
-export function cvAiConversationTitle(personaName: string): string {
-  return `CV with AI${personaName ? `: ${personaName}` : ''}`
 }
