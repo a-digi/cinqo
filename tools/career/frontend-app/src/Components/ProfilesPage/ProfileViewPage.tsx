@@ -19,6 +19,8 @@ import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { OptimizeWithAi } from '../../Optimize/OptimizeWithAi'
 import { PROFILES_PATH, jobBoardPathFor, personasPathFor, profileSettingsPathFor, viewPersonaPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
@@ -56,6 +58,9 @@ export function ProfileViewPage() {
   const { photos, error: photoError, remove: removePhoto } = useProfilePhotos(profileId || null, refreshProfile)
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
+  // "Optimize with AI" (plan 258): the AI to start from, and a counter that makes the page read the profile again after the person approved a suggestion.
+  const ai = useAiChoice()
+  const [reloadKey, setReloadKey] = useState(0)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [personasLoaded, setPersonasLoaded] = useState(false)
   // How many jobs are on this profile's job board; null until read, or when it cannot be.
@@ -126,7 +131,7 @@ export function ProfileViewPage() {
         setPersonas([])
         setPersonasLoaded(true)
       })
-  }, [profileId])
+  }, [profileId, reloadKey])
 
   function go(e: React.MouseEvent, path: string) {
     e.preventDefault()
@@ -171,6 +176,18 @@ export function ProfileViewPage() {
           href: personasPathFor(profile.id),
         }}
       />
+      <div className="mb-4 flex justify-end">
+        <OptimizeWithAi
+          subjectKind="profile"
+          subjectId={profile.id}
+          subjectName={name}
+          ai={ai}
+          platforms={ai.platforms}
+          onApplied={() => {
+            setReloadKey((n) => n + 1)
+          }}
+        />
+      </div>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <aside className="order-1 w-full shrink-0 space-y-5 lg:w-80">

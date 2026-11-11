@@ -672,3 +672,42 @@ func TestFinishingOverHTTPSaysHowManySuggestionsWait(t *testing.T) {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 }
+
+func TestTheManifestListsEveryRouteAndToolOnce(t *testing.T) {
+	raw, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Routes []struct {
+			Method     string `json:"method"`
+			PathSuffix string `json:"path_suffix"`
+		} `json:"routes"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, r := range m.Routes {
+		k := r.Method + " " + r.PathSuffix
+		if seen[k] {
+			t.Errorf("route %s is listed twice", k)
+		}
+		seen[k] = true
+	}
+	tools := map[string]bool{}
+	for _, tl := range m.Tools {
+		if tools[tl.Name] {
+			t.Errorf("tool %s is listed twice", tl.Name)
+		}
+		tools[tl.Name] = true
+	}
+	for _, n := range []string{"get_optimize_subject", "suggest_optimization"} {
+		if !tools[n] {
+			t.Errorf("tool %s is not declared", n)
+		}
+	}
+}

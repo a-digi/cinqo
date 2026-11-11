@@ -225,6 +225,8 @@ func runHTTPServer() {
 	// Plan 258: "Optimize with AI" on a profile and on a persona.
 	http.HandleFunc("/optimize-runs", optimize.RunsHandler)
 	http.HandleFunc("/optimize-runs/subject", optimize.SubjectHandler)
+	http.HandleFunc("/optimize-runs/suggestions", optimize.SuggestionsHandler)
+	http.HandleFunc("/optimize-runs/decide", optimize.DecideHandler)
 	http.HandleFunc("/personas", personahandlers.PersonasHandler)
 	http.HandleFunc("/persona-details", personahandlers.PersonaDetailsHandler)
 	http.HandleFunc("/skills", profilehandlers.SkillsHandler)
@@ -407,6 +409,8 @@ func runMCPServer() {
 	persona.RegisterDeletePersona(server)
 	persona.RegisterGetPersonaDetails(server)
 	persona.RegisterSuggestPersona(server)
+	optimize.RegisterGetOptimizeSubject(server)
+	optimize.RegisterSuggestOptimization(server)
 	cv.RegisterSuggestCVImport(server)
 	cv.RegisterCVImportDraftTools(server)
 	cv.RegisterGetCvImportSuggestions(server)

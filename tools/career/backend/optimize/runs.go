@@ -294,7 +294,7 @@ func writeError(w http.ResponseWriter, action string, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalid):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrRunFinished), errors.Is(err, ErrRunOpen):
+	case errors.Is(err, ErrRunFinished), errors.Is(err, ErrRunOpen), errors.Is(err, ErrRunNotGenerating), errors.Is(err, ErrRunNotReady):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)

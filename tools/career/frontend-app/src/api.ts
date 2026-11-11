@@ -3230,3 +3230,159 @@ export async function deleteApplicationMessage(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/application-messages?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok) throw new Error((await res.text().catch(() => '')).trim() || `failed to delete the message (${String(res.status)})`)
 }
+
+// --- Optimize with AI (plan 258) ---
+
+// The server's own sentence is kept: it says why ("this already has an optimization that is running…").
+async function optimizeJson<T>(res: Response, action: string): Promise<T> {
+  if (!res.ok) throw new Error((await res.text().catch(() => '')).trim() || `failed to ${action} (${String(res.status)})`)
+  return res.json() as Promise<T>
+}
+
+export type OptimizeSubjectKind = 'profile' | 'persona'
+export type OptimizeRunStatus = 'generating' | 'ready' | 'failed'
+
+// One improved text waiting for the person. stale: the text is no longer what the AI read (it was changed meanwhile): it can only be declined.
+export interface OptimizeSuggestion {
+  id: string
+  kind: string
+  itemId: string
+  field: string
+  label: string
+  before: string
+  after: string
+  reason: string
+  stale: boolean
+}
+
+export interface OptimizeRun {
+  id: string
+  subjectKind: OptimizeSubjectKind
+  subjectId: string
+  conversationId: string
+  // '' is the tool conversation of a remote model, 'local' the code driver of a small local model.
+  driver: '' | 'local'
+  focus: string
+  status: OptimizeRunStatus
+  error?: string
+  createdAt: string
+  finishedAt?: string
+  suggestions: OptimizeSuggestion[]
+}
+
+export interface OptimizeDecision {
+  suggestionId: string
+  approve: boolean
+}
+
+export interface OptimizeOutcome {
+  suggestionId: string
+  ok: boolean
+  error?: string
+}
+
+export interface OptimizeDecided {
+  outcomes: OptimizeOutcome[]
+  remaining: number
+  closed: boolean
+}
+
+export async function fetchOptimizeRuns(subjectKind: OptimizeSubjectKind, subjectId: string): Promise<OptimizeRun[]> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs?subjectKind=${subjectKind}&subjectId=${encodeURIComponent(subjectId)}`, {
+    credentials: 'include',
+  })
+  const data = await optimizeJson<{ runs: OptimizeRun[] }>(res, 'load the optimizations')
+  return data.runs
+}
+
+// Records the start of a run, before the first message is sent, so a reload can resume it. A subject has only one open run (409 otherwise).
+export async function createOptimizeRun(
+  subjectKind: OptimizeSubjectKind,
+  subjectId: string,
+  conversationId: string,
+  driver: '' | 'local',
+  focus: string,
+): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subjectKind, subjectId, conversationId, driver, focus }),
+  })
+  const data = await optimizeJson<{ id: string }>(res, 'record the optimization')
+  return data.id
+}
+
+// Ends a generating run. Answers how many suggestions wait: 0 means the AI found nothing to improve and the run was removed.
+export async function finishOptimizeRun(id: string, outcome: { status: 'ready' } | { status: 'failed'; error: string }): Promise<number> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...outcome }),
+  })
+  const data = await optimizeJson<{ suggestions: number }>(res, 'finish the optimization')
+  return data.suggestions
+}
+
+export async function deleteOptimizeRun(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) {
+    throw new Error((await res.text()).trim() || `failed to dismiss the optimization (${res.status})`)
+  }
+}
+
+// The texts the AI is given, for the code driver of a local model.
+export interface OptimizeText {
+  kind: string
+  itemId: string
+  field: string
+  label: string
+  context?: string
+  text: string
+}
+
+export interface OptimizeSubject {
+  subjectKind: OptimizeSubjectKind
+  subjectId: string
+  name: string
+  texts: OptimizeText[]
+}
+
+export async function fetchOptimizeSubject(subjectKind: OptimizeSubjectKind, subjectId: string): Promise<OptimizeSubject> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs/subject?subjectKind=${subjectKind}&subjectId=${encodeURIComponent(subjectId)}`, {
+    credentials: 'include',
+  })
+  return optimizeJson<OptimizeSubject>(res, 'read the texts')
+}
+
+// Hands one improved text over (the code driver does this for a local model; a remote model uses the tool).
+export async function storeOptimizeSuggestion(s: {
+  runId: string
+  kind: string
+  itemId: string
+  field: string
+  text: string
+  reason: string
+}): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs/suggestions`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(s),
+  })
+  if (!res.ok) {
+    throw new Error((await res.text()).trim() || `failed to store the suggestion (${res.status})`)
+  }
+}
+
+// The person's decisions on suggestions of a ready run: approved ones are written, declined ones deleted. One refused decision does not stop the others.
+export async function decideOptimizeSuggestions(runId: string, decisions: OptimizeDecision[]): Promise<OptimizeDecided> {
+  const res = await fetch(`${PROXY_BASE}/optimize-runs/decide`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId, decisions }),
+  })
+  return optimizeJson<OptimizeDecided>(res, 'apply your decisions')
+}

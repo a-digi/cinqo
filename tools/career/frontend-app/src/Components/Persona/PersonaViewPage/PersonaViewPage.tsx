@@ -17,6 +17,8 @@ import { Comments } from '../../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
+import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
+import { OptimizeWithAi } from '../../../Optimize/OptimizeWithAi'
 import {
   GOALS_PATH,
   PERSONAS_PATH,
@@ -63,6 +65,9 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
   const [personaChatId, setPersonaChatId] = useState<string | null>(null)
   // The photos are the profile's (a persona has none of its own).
   const { photos, error: photoError, remove: removePhoto } = useProfilePhotos(persona?.profileId ?? null)
+  // "Optimize with AI" (plan 258): the AI to start from, and a counter that makes the page read its texts again after the person approved a suggestion.
+  const ai = useAiChoice()
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     if (!personaId) {
@@ -126,7 +131,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
       .catch(() => {
         setAiChats(new Map())
       })
-  }, [personaId])
+  }, [personaId, reloadKey])
 
   function go(e: React.MouseEvent, path: string, beforeGo?: () => void) {
     e.preventDefault()
@@ -172,6 +177,18 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
         description={persona.description ?? 'No description yet.'}
         pill={profile ? { text: profileLabel(profile), href: profilePath } : undefined}
       />
+      <div className="mb-4 flex justify-end">
+        <OptimizeWithAi
+          subjectKind="persona"
+          subjectId={persona.id}
+          subjectName={persona.name}
+          ai={ai}
+          platforms={ai.platforms}
+          onApplied={() => {
+            setReloadKey((n) => n + 1)
+          }}
+        />
+      </div>
       <p className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
         <span>{lifetimeText(persona.createdAt, persona.updatedAt, formatDate)}</span>
         {profile && (
