@@ -146,6 +146,31 @@
     },
     {
       "method": "GET",
+      "path_suffix": "optimize-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "optimize-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "optimize-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "optimize-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "optimize-runs/subject",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
       "path_suffix": "personas",
       "required_scope": "tool:career:profile"
     },

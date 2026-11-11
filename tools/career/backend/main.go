@@ -71,6 +71,7 @@ import (
 	"career-tool-backend/match/consumer/profilejobmatchconsumer"
 	"career-tool-backend/match/matchorphans"
 	"career-tool-backend/match/rematchworker"
+	"career-tool-backend/optimize"
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
@@ -148,6 +149,12 @@ func runHTTPServer() {
 	} else if n > 0 {
 		log.Printf("ended %d stale persona AI run(s)", n)
 	}
+	// plan 258 — same for an "Optimize with AI" run.
+	if n, err := optimize.ReconcileStale(); err != nil {
+		log.Printf("failed to reconcile stale optimize runs: %v", err)
+	} else if n > 0 {
+		log.Printf("ended %d stale optimize run(s)", n)
+	}
 	// step 155 — same for a CV import run (the AI's proposal arrives through suggest_cv_import; the page ends the run).
 	if n, err := cv.ReconcileStaleCVImportRuns(); err != nil {
 		log.Printf("failed to reconcile stale CV import runs: %v", err)
@@ -215,6 +222,9 @@ func runHTTPServer() {
 	http.HandleFunc("/profile-photos", profileimage.ProfilePhotosHandler)
 	http.HandleFunc("/persona-ai-runs", persona.AiRunsHandler)
 	http.HandleFunc("/persona-ai-runs/apply", persona.AiRunApplyHandler)
+	// Plan 258: "Optimize with AI" on a profile and on a persona.
+	http.HandleFunc("/optimize-runs", optimize.RunsHandler)
+	http.HandleFunc("/optimize-runs/subject", optimize.SubjectHandler)
 	http.HandleFunc("/personas", personahandlers.PersonasHandler)
 	http.HandleFunc("/persona-details", personahandlers.PersonaDetailsHandler)
 	http.HandleFunc("/skills", profilehandlers.SkillsHandler)

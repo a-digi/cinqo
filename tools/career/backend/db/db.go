@@ -325,6 +325,53 @@ CREATE TABLE IF NOT EXISTS persona_ai_suggestions (
     UNIQUE(run_id, position)
 );
 
+-- "Optimize with AI" (plan 258): one attempt of the AI to improve the wording of the texts of a profile or of a persona. The
+-- subject is a plain reference (no FK, it is one of two tables): the triggers below remove a run with its subject.
+-- driver '' is the tool conversation of a remote model, 'local' the code driver of a small local model (no conversation).
+CREATE TABLE IF NOT EXISTS optimize_runs (
+    id              TEXT PRIMARY KEY,
+    subject_kind    TEXT NOT NULL CHECK (subject_kind IN ('profile','persona')),
+    subject_id      TEXT NOT NULL,
+    conversation_id TEXT NOT NULL DEFAULT '',
+    driver          TEXT NOT NULL DEFAULT '' CHECK (driver IN ('','local')),
+    focus           TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'generating' CHECK (status IN ('generating','ready','failed')),
+    error           TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS optimize_runs_subject_idx ON optimize_runs(subject_kind, subject_id);
+
+-- At most one open (generating or waiting for the user) run per subject, kept by the database so two clicks cannot start two.
+CREATE UNIQUE INDEX IF NOT EXISTS optimize_runs_open_idx ON optimize_runs(subject_kind, subject_id) WHERE status IN ('generating','ready');
+
+-- A suggestion row exists while it waits for the user: declining deletes it, approving writes the text and deletes it.
+-- before_text is the text the AI was shown: approving is refused when the text is no longer that.
+CREATE TABLE IF NOT EXISTS optimize_suggestions (
+    id          TEXT PRIMARY KEY,
+    run_id      TEXT NOT NULL REFERENCES optimize_runs(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    kind        TEXT NOT NULL,
+    item_id     TEXT NOT NULL DEFAULT '',
+    field       TEXT NOT NULL,
+    before_text TEXT NOT NULL,
+    after_text  TEXT NOT NULL,
+    reason      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(run_id, kind, item_id, field)
+);
+
+CREATE TRIGGER IF NOT EXISTS optimize_runs_profile_deleted AFTER DELETE ON profiles
+BEGIN
+    DELETE FROM optimize_runs WHERE subject_kind = 'profile' AND subject_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS optimize_runs_persona_deleted AFTER DELETE ON personas
+BEGIN
+    DELETE FROM optimize_runs WHERE subject_kind = 'persona' AND subject_id = OLD.id;
+END;
+
 CREATE TABLE IF NOT EXISTS persona_details (
     persona_id        TEXT PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
     headline          TEXT NOT NULL DEFAULT '',
