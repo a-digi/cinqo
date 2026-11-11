@@ -86,9 +86,10 @@ export function Modal({ open, title, onClose, children, size = 'default', subtit
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
           >
-            <XIcon />
+            {/* twice the size of the other dialogs' close button (plan 246 follow-up): the window is the whole screen, the way out is easy to hit */}
+            <XIcon className="h-7 w-7" />
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>

@@ -9,9 +9,9 @@ export function PlusIcon() {
   )
 }
 
-export function XIcon() {
+export function XIcon({ className = 'h-3.5 w-3.5' }: { className?: string } = {}) {
   return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className={className}>
       <path d="M6 6l8 8M14 6l-8 8" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
