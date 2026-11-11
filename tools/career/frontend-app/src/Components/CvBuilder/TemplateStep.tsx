@@ -6,7 +6,7 @@ import { previewImages } from './previewImages'
 import type { CvTemplate } from '../../api'
 import { CvPhotoPicker } from './CvPhotoPicker'
 import { showsPicker, type CvPhoto } from './cvPhotoRules'
-import { clampPage, pageOf, pageSlice, TEMPLATES_PER_PAGE } from './templatePaging'
+import { chosenStatus, clampPage, pageOf, pageSlice, TEMPLATES_PER_PAGE } from './templatePaging'
 
 export interface TemplateStepProps {
   templates: CvTemplate[]
@@ -102,6 +102,8 @@ export function TemplateStep({
   // A page that no longer exists (the list got shorter) is never shown empty: it is the last page.
   const shownPage = clampPage(page, filteredTemplates.length)
   const pageTemplates = pageSlice(filteredTemplates, shownPage)
+  const chosen = chosenStatus(templates, filteredTemplates, templateId, shownPage)
+  const chosenName = templates.find((t) => t.id === templateId)?.name ?? ''
 
   return (
     <div className="space-y-4">
@@ -177,6 +179,35 @@ export function TemplateStep({
             ? `Showing ${String(filteredTemplates.length)} of ${String(templates.length)} templates`
             : `${String(templates.length)} templates`}
         </p>
+
+        {chosen.kind !== 'none' && (
+          <p className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-gray-700" data-testid="chosen-template">
+            <span>
+              Chosen: <span className="font-medium text-gray-900">{chosenName}</span>
+              {chosen.kind === 'page' && ` (page ${String(chosen.page)})`}
+              {chosen.kind === 'hidden' && ' (hidden by the filters)'}
+            </span>
+            {(chosen.kind === 'page' || chosen.kind === 'hidden') && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (chosen.kind === 'hidden') {
+                    // the filters leave it out: they go, and the page is the one that holds it in the whole list
+                    setCategory(ALL_CATEGORIES)
+                    setProfessions([])
+                    setPage(pageOf(templates, templateId))
+                  } else {
+                    setPage(chosen.page)
+                  }
+                  galleryTop.current?.scrollIntoView({ block: 'start' })
+                }}
+                className="text-xs text-gray-500 underline hover:text-gray-700"
+              >
+                Show it
+              </button>
+            )}
+          </p>
+        )}
 
         {filteredTemplates.length === 0 && <p className="text-sm text-gray-400">No templates match these filters.</p>}
 

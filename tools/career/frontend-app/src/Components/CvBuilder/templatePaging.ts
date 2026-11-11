@@ -26,3 +26,19 @@ export function pageOf(list: readonly { id: string }[], id: string): number {
   const i = list.findIndex((t) => t.id === id)
   return i < 0 ? 1 : Math.floor(i / TEMPLATES_PER_PAGE) + 1
 }
+
+// plan 250, step 3: where the template the person chose is, as the picker's "Chosen" line says it. 'none': nothing chosen (or a template that is not in the
+// list); 'here': on the page in view; 'page': on another page of the filtered list; 'hidden': the filters leave it out.
+export type ChosenStatus = { kind: 'none' } | { kind: 'here' } | { kind: 'page'; page: number } | { kind: 'hidden' }
+
+export function chosenStatus(
+  all: readonly { id: string }[],
+  filtered: readonly { id: string }[],
+  id: string,
+  shownPage: number,
+): ChosenStatus {
+  if (!all.some((t) => t.id === id)) return { kind: 'none' }
+  if (!filtered.some((t) => t.id === id)) return { kind: 'hidden' }
+  const page = pageOf(filtered, id)
+  return page === shownPage ? { kind: 'here' } : { kind: 'page', page }
+}
