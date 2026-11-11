@@ -96,9 +96,9 @@ h2 {
   break-after: avoid;
   page-break-after: avoid;
 }
-.entry-title,
-.entry-company,
-.entry-meta {
+.entry-title:not(:last-child),
+.entry-company:not(:last-child),
+.entry-meta:not(:last-child) {
   break-after: avoid;
   page-break-after: avoid;
 }

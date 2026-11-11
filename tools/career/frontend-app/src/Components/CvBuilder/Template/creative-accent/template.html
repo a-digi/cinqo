@@ -34,9 +34,39 @@
       <p class="entry-desc">{{.Description}}</p>
       {{end}}
     </div>
+    {{end}} {{end}}
+{{if .Education}}
+    <h2>Education</h2>
+    {{range .Education}}
+    <div class="entry">
+      <div class="entry-title">{{.Title}}{{if .Company}}, {{.Company}}{{end}}</div>
+      {{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
+      {{if .Description}}
+      <p class="entry-desc">{{.Description}}</p>
+      {{end}}
+    </div>
+    {{end}} {{end}}
+{{if .Courses}}
+    <h2>Courses</h2>
+    {{range .Courses}}
+    <div class="entry">
+      <div class="entry-title">{{.Title}}{{if .Company}}, {{.Company}}{{end}}</div>
+      {{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
+      {{if .Description}}
+      <p class="entry-desc">{{.Description}}</p>
+      {{end}}
+    </div>
     {{end}} {{end}} {{if .Skills}}
     <h2>Skills</h2>
     <p class="skills">{{range .Skills}}<span class="skill-pill">{{.}}</span>{{end}}</p>
+    {{end}}
+{{if .Languages}}
+    <h2>Languages</h2>
+    <p class="skills">{{range .Languages}}<span class="skill-pill">{{.Display}}</span>{{end}}</p>
+    {{end}}
+{{if .Hobbies}}
+    <h2>Hobbies</h2>
+    <p class="skills">{{range .Hobbies}}<span class="skill-pill">{{.Display}}</span>{{end}}</p>
     {{end}}
   </body>
 </html>

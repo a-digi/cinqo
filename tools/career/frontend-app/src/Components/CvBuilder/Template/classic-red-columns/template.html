@@ -34,15 +34,55 @@
       <h2>Experience</h2>
       {{range .Experience}}
       <div class="entry">
-        <div class="entry-title">{{.Title}}</div>
-        {{if .Company}}
+<div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+<div class="entry-body">
+<div class="entry-title">{{.Title}}</div>
+{{if .Company}}
         <div class="entry-company">{{.Company}}</div>
         {{end}}
-        <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
-        {{if .Description}}
+{{if .Description}}
         <p class="entry-desc">{{.Description}}</p>
         {{end}}
-      </div>
+</div>
+</div>
+      {{end}}
+    </div>
+    {{end}}
+{{if .Education}}
+    <div class="section section-experience">
+      <h2>Education</h2>
+      {{range .Education}}
+      <div class="entry">
+{{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
+<div class="entry-body">
+<div class="entry-title">{{.Title}}</div>
+{{if .Company}}
+        <div class="entry-company">{{.Company}}</div>
+        {{end}}
+{{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+</div>
+</div>
+      {{end}}
+    </div>
+    {{end}}
+{{if .Courses}}
+    <div class="section section-experience">
+      <h2>Courses</h2>
+      {{range .Courses}}
+      <div class="entry">
+{{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
+<div class="entry-body">
+<div class="entry-title">{{.Title}}</div>
+{{if .Company}}
+        <div class="entry-company">{{.Company}}</div>
+        {{end}}
+{{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+</div>
+</div>
       {{end}}
     </div>
     {{end}} {{if .Skills}}
@@ -51,6 +91,26 @@
       <ul class="skills">
         {{range .Skills}}
         <li>{{.}}</li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+{{if .Languages}}
+    <div class="section section-skills">
+      <h2>Languages</h2>
+      <ul class="skills">
+        {{range .Languages}}
+        <li>{{.Display}}</li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+{{if .Hobbies}}
+    <div class="section section-skills">
+      <h2>Hobbies</h2>
+      <ul class="skills">
+        {{range .Hobbies}}
+        <li>{{.Display}}</li>
         {{end}}
       </ul>
     </div>

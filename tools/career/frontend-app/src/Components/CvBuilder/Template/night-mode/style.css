@@ -200,3 +200,23 @@ h2 {
    it move the whole entry to the next page, so a title line cannot be told to stay with its description here: when an entry starts at the very bottom of a page,
    its title line can end the page with the description on the next one. That is the price of no big gaps; a grid entry that keeps its head together needs a
    head wrapper in the markup of the design (plan 251, step 4). */
+
+/* Entry markup (plan 251, step 4): the text of an entry is in one block, so a page break cannot leave its title line alone at the bottom of a page.
+   Chrome does not keep the rows of a grid together; it does keep a block together. The look is the one the grid made. */
+.entry {
+  grid-template-areas: 'meta body';
+}
+.entry-body {
+  grid-area: body;
+}
+.entry-title:not(:last-child),
+.entry-company:not(:last-child) {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* A short section (skills, languages, hobbies) is kept whole: its heading cannot be left alone at the bottom of a page above a list that did not fit (plan 251). */
+.section-skills {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}

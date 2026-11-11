@@ -35,6 +35,12 @@
       {{end}} {{if .Skills}}
       <h2>Skills</h2>
       {{range .Skills}}<span class="skill-pill">{{.}}</span>{{end}} {{end}}
+{{if .Languages}}
+      <h2>Languages</h2>
+      {{range .Languages}}<span class="skill-pill">{{.Display}}</span>{{end}} {{end}}
+{{if .Hobbies}}
+      <h2>Hobbies</h2>
+      {{range .Hobbies}}<span class="skill-pill">{{.Display}}</span>{{end}} {{end}}
     </div>
     <div class="main">
       <h1>{{.FullName}}</h1>
@@ -49,6 +55,28 @@
       <div class="entry">
         <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
         <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+        {{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+      </div>
+      {{end}} {{end}}
+{{if .Education}}
+      <h2>Education</h2>
+      {{range .Education}}
+      <div class="entry">
+        <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
+        {{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
+        {{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+      </div>
+      {{end}} {{end}}
+{{if .Courses}}
+      <h2>Courses</h2>
+      {{range .Courses}}
+      <div class="entry">
+        <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
+        {{if .DateRange}}<div class="entry-meta">{{.DateRange}}</div>{{end}}
         {{if .Description}}
         <p class="entry-desc">{{.Description}}</p>
         {{end}}

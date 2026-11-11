@@ -13,15 +13,61 @@ import (
 // later has to follow them too.
 
 var (
-	avoidInside = regexp.MustCompile(`(?i)(page-)?break-inside\s*:\s*avoid`)
-	entryRule   = regexp.MustCompile(`\.entry\s*\{[^}]*\}`)
-	gridDisplay = regexp.MustCompile(`display\s*:\s*grid`)
-	h2Rule      = regexp.MustCompile(`(?s)(?:^|\})\s*(?:/\*.*?\*/\s*)*h2\s*\{([^}]*)\}`)
-	displayDecl = regexp.MustCompile(`display\s*:\s*([a-z-]+)`)
-	descPreLine = regexp.MustCompile(`\.entry-desc[^{}]*\{[^}]*white-space\s*:\s*pre-line`)
-	h2KeepNext  = regexp.MustCompile(`h2\s*\{[^}]*break-after\s*:\s*avoid`)
-	titleAvoid  = regexp.MustCompile(`\.entry-title[^{}]*\{[^}]*break-after\s*:\s*avoid`)
+	avoidInside  = regexp.MustCompile(`(?i)(page-)?break-inside\s*:\s*avoid`)
+	entryRule    = regexp.MustCompile(`\.entry\s*\{[^}]*\}`)
+	gridDisplay  = regexp.MustCompile(`display\s*:\s*grid`)
+	h2Rule       = regexp.MustCompile(`(?s)(?:^|\})\s*(?:/\*.*?\*/\s*)*h2\s*\{([^}]*)\}`)
+	displayDecl  = regexp.MustCompile(`display\s*:\s*([a-z-]+)`)
+	descPreLine  = regexp.MustCompile(`\.entry-desc[^{}]*\{[^}]*white-space\s*:\s*pre-line`)
+	h2KeepNext   = regexp.MustCompile(`h2\s*\{[^}]*break-after\s*:\s*avoid`)
+	titleAvoid   = regexp.MustCompile(`\.entry-title[^{}]*\{[^}]*break-after\s*:\s*avoid`)
+	headRule     = regexp.MustCompile(`\.entry-head\s*\{[^}]*\}`)
+	sectionRule  = regexp.MustCompile(`\.section-skills\s*\{[^}]*\}`)
+	sectionWhole = regexp.MustCompile(`\.section-skills\s*\{[^}]*break-inside\s*:\s*avoid[^}]*page-break-inside\s*:\s*avoid`)
+	headWhole    = regexp.MustCompile(`\.entry-head\s*\{[^}]*break-inside\s*:\s*avoid`)
+	headWith     = regexp.MustCompile(`\.entry-head:not\(:last-child\)\s*\{[^}]*break-after\s*:\s*avoid`)
+	anyRule      = regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`)
+	entryPart    = regexp.MustCompile(`\.entry-(title|company|meta|head)\b`)
+	keepsNext    = regexp.MustCompile(`break-after\s*:\s*avoid`)
+	entryBlock   = regexp.MustCompile(`\.entry\s*\{\s*display\s*:\s*block\s*;?\s*\}`)
+	bodyArea     = regexp.MustCompile(`\.entry-body\s*\{[^}]*grid-area\s*:\s*body`)
+	bodyAreas    = regexp.MustCompile(`\.entry\s*\{[^}]*grid-template-areas\s*:\s*'meta body'`)
 )
+
+// withoutHead is the stylesheet without the two things that are kept whole on purpose: the head of an entry and a short skills-style section.
+func withoutHead(css string) string {
+	return sectionRule.ReplaceAllString(headRule.ReplaceAllString(css, ""), "")
+}
+
+// entryShape tells how the first (experience) entry of a design is built: "block" (title, company, dates and description one under the other, the 26 designs that
+// never were a grid), "head" (the title, company and dates in one block, the description after it) or "body" (the dates in a column, the title, company and
+// description in one block beside it). The grid designs used to put every part in its own grid row, and Chrome does not keep grid rows together: a page could
+// end on a title line alone.
+func entryShape(t *testing.T, id string) string {
+	t.Helper()
+	b, err := templateFS.ReadFile(id + "/template.html")
+	if err != nil {
+		t.Fatalf("%s: %v", id, err)
+	}
+	html := string(b)
+	i := strings.Index(html, `<div class="entry">`)
+	d := strings.Index(html[i:], `class="entry-desc"`)
+	if i < 0 || d < 0 {
+		t.Fatalf("%s: no entry with a description in the template", id)
+	}
+	seg := html[i : i+d]
+	open := strings.Count(seg, "<div") - strings.Count(seg, "</div>")
+	switch {
+	case strings.Contains(seg, `class="entry-head"`) && open == 1:
+		return "head"
+	case strings.Contains(seg, `class="entry-body"`) && open == 2:
+		return "body"
+	case !strings.Contains(seg, `class="entry-head"`) && !strings.Contains(seg, `class="entry-body"`) && open == 1:
+		return "block"
+	}
+	t.Fatalf("%s: the entry is built in a way no rule knows (open divs before the description: %d)", id, open)
+	return ""
+}
 
 func styleOf(t *testing.T, id string) string {
 	t.Helper()
@@ -58,21 +104,53 @@ func TestEveryDesignFlowsOverPages(t *testing.T) {
 			if entry == "" {
 				t.Fatal("no .entry rule")
 			}
-			// a long entry may continue on the next page: nothing keeps an entry whole (a whole entry that did not fit used to jump over and leave a big gap)
-			if avoidInside.MatchString(css) {
-				t.Error("something forbids breaking inside it: an entry that does not fit would jump to the next page and leave a gap")
+			// a long entry may continue on the next page: nothing keeps an entry whole (a whole entry that did not fit used to jump over and leave a big gap); only
+			// the head of an entry (its title, company and dates) is kept in one piece
+			if avoidInside.MatchString(withoutHead(css)) {
+				t.Error("something other than the entry head forbids breaking inside it: an entry that does not fit would jump to the next page and leave a gap")
 			}
 			if strings.Contains(css, "entry-long") {
 				t.Error("there is no long-entry class any more")
 			}
-			// The title line stays with the first lines of its description where Chrome allows it. A grid (the dates beside the text) must not get "avoid" between its
-			// items one by one: Chrome then moves the whole entry to the next page. A grid entry gets no rule for it (see the note in its stylesheet).
-			if gridDisplay.MatchString(entry) {
-				if titleAvoid.MatchString(css) {
-					t.Error("grid entry: break-after: avoid on the title items makes Chrome move the whole entry to the next page")
+			// The title line stays with the first lines of its description, in every kind of design.
+			switch shape := entryShape(t, m.ID); shape {
+			case "block":
+				if !titleAvoid.MatchString(css) {
+					t.Error("block entry: the title line is not kept with its first lines")
 				}
-			} else if !titleAvoid.MatchString(css) {
-				t.Error("block entry: the title line is not kept with its first lines")
+				if gridDisplay.MatchString(entry) {
+					t.Error("block entry: it must not be a grid (Chrome does not keep grid rows together)")
+				}
+			case "head":
+				if !headWhole.MatchString(css) || !headWith.MatchString(css) {
+					t.Error("head entry: the head is not kept in one piece, and with the description when there is one (break-inside: avoid; break-after: avoid when it is not the last child)")
+				}
+				if !entryBlock.MatchString(css) {
+					t.Error("head entry: the entry itself must be a block, so the description follows the head in normal flow")
+				}
+			case "body":
+				if !bodyArea.MatchString(css) || !bodyAreas.MatchString(css) {
+					t.Error("body entry: the body must sit beside the dates in the grid (grid-area: body, 'meta body')")
+				}
+				if !titleAvoid.MatchString(css) {
+					t.Error("body entry: the title line is not kept with its first lines")
+				}
+			}
+			// "Keep with the next" only when something follows. A part of an entry that carries it as the last child hands it on to the next entry, and a run of
+			// entries without a description (education, courses) would then move to the next page as one block, leaving half a page empty.
+			for _, r := range anyRule.FindAllStringSubmatch(css, -1) {
+				if !keepsNext.MatchString(r[2]) {
+					continue
+				}
+				for _, sel := range strings.Split(r[1], ",") {
+					if entryPart.MatchString(sel) && !strings.Contains(sel, ":not(:last-child)") {
+						t.Errorf("%q keeps with the next even as the last child of an entry (add :not(:last-child))", strings.TrimSpace(sel))
+					}
+				}
+			}
+			// A short section (skills, languages, hobbies) is kept whole, so its heading cannot end a page above a list that did not fit.
+			if html, err := templateFS.ReadFile(m.ID + "/template.html"); err == nil && strings.Contains(string(html), "section-skills") && !sectionWhole.MatchString(css) {
+				t.Error("a skills-style section is not kept whole (.section-skills { break-inside: avoid })")
 			}
 			// no one or two lines are left alone
 			if !strings.Contains(css, "orphans: 3") || !strings.Contains(css, "widows: 3") {
@@ -104,7 +182,7 @@ func TestRenderedDesignsCarryTheFlowRules(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", m.ID, err)
 		}
-		if !strings.Contains(x, "Page flow (plan 251)") || avoidInside.MatchString(x) || !strings.Contains(x, "- one\n- two\n- three") || !strings.Contains(x, `<div class="entry">`) {
+		if !strings.Contains(x, "Page flow (plan 251)") || avoidInside.MatchString(withoutHead(x)) || !strings.Contains(x, "- one\n- two\n- three") || !strings.Contains(x, `<div class="entry">`) {
 			t.Errorf("%s: the rendered page lacks the flow rules, still forbids a break, or lost the line breaks of the description", m.ID)
 		}
 	}
