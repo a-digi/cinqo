@@ -436,6 +436,7 @@ func runMCPServer() {
 	cvbuilder.RegisterGetPersonaCvDefaults(server)
 	cvbuilder.RegisterRenderCvDocument(server)
 	cvbuilder.RegisterSavePersonaCv(server)
+	cvbuilder.RegisterHandOverCv(server)
 	cvbuilder.RegisterSaveCvForPersona(server)
 	jobs.RegisterSavePortalJob(server)
 	jobs.RegisterSavePortalJobs(server)

@@ -1249,6 +1249,10 @@
       "promote_media_param": "pdfResource"
     },
     {
+      "name": "hand_over_cv",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
       "name": "save_cv_for_persona",
       "required_scope": "tool:career:cv_documents",
       "promote_media_param": "pdfResource"

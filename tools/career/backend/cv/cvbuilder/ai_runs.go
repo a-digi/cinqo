@@ -50,9 +50,11 @@ type CvAiRun struct {
 	Focus          string `json:"focus"`
 	Status         string `json:"status"`
 	CvDocumentID   string `json:"cvDocumentId,omitempty"`
-	Error          string `json:"error,omitempty"`
-	CreatedAt      string `json:"createdAt"`
-	FinishedAt     string `json:"finishedAt,omitempty"`
+	// Choice is what a model-driven run handed over with hand_over_cv (plan 256) and the page makes the CV from; absent until then.
+	Choice     *CvAiChoice `json:"choice,omitempty"`
+	Error      string      `json:"error,omitempty"`
+	CreatedAt  string      `json:"createdAt"`
+	FinishedAt string      `json:"finishedAt,omitempty"`
 }
 
 // CreateCvAiRun records the start of a run (status 'generating'). Stale runs of the persona are
@@ -209,7 +211,7 @@ func ListCvAiRuns(personaID string) ([]CvAiRun, error) {
 		return nil, err
 	}
 	rows, err := db.CareerDB.Query(
-		`SELECT id, persona_id, conversation_id, focus, status, cv_document_id, error, created_at, finished_at
+		`SELECT id, persona_id, conversation_id, focus, status, cv_document_id, error, created_at, finished_at, choice_json
 		 FROM cv_ai_runs WHERE persona_id = ? ORDER BY created_at DESC, rowid DESC`, personaID)
 	if err != nil {
 		return nil, err
@@ -218,11 +220,18 @@ func ListCvAiRuns(personaID string) ([]CvAiRun, error) {
 	runs := []CvAiRun{}
 	for rows.Next() {
 		var r CvAiRun
-		var cv, errText, finished sql.NullString
-		if err := rows.Scan(&r.ID, &r.PersonaID, &r.ConversationID, &r.Focus, &r.Status, &cv, &errText, &r.CreatedAt, &finished); err != nil {
+		var cv, errText, finished, choice sql.NullString
+		if err := rows.Scan(&r.ID, &r.PersonaID, &r.ConversationID, &r.Focus, &r.Status, &cv, &errText, &r.CreatedAt, &finished, &choice); err != nil {
 			return nil, err
 		}
 		r.CvDocumentID, r.Error, r.FinishedAt = cv.String, errText.String, finished.String
+		if choice.Valid {
+			var c CvAiChoice
+			// a stored choice that cannot be read is left out (the page then ends the run as failed), never a failure of the whole list
+			if json.Unmarshal([]byte(choice.String), &c) == nil {
+				r.Choice = &c
+			}
+		}
 		runs = append(runs, r)
 	}
 	return runs, rows.Err()

@@ -123,6 +123,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the CV import run draft: %w", err)
 	}
+	if err := migrateCvAiRunsChoice(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the CV AI run choice: %w", err)
+	}
 	if err := migrateCVImportRunsDriver(careerDB); err != nil {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the CV import run driver: %w", err)
@@ -542,7 +546,9 @@ CREATE TABLE IF NOT EXISTS cv_ai_runs (
     cv_document_id  TEXT REFERENCES cv_documents(id) ON DELETE SET NULL,
     error           TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    finished_at     TEXT
+    finished_at     TEXT,
+    -- the choice a model-driven run handed over with hand_over_cv (plan 256): the design, the title and the data the page then makes the CV from; NULL until then
+    choice_json     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS cv_ai_runs_persona_idx ON cv_ai_runs(persona_id);
@@ -1695,6 +1701,17 @@ func migrateCVImportRunsDraft(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE cv_import_runs ADD COLUMN draft_json TEXT`)
+	return err
+}
+
+// migrateCvAiRunsChoice adds the nullable choice_json column (plan 256) to an already-installed cv_ai_runs table; a no-op on a brand-new install (the base schema has it) and on
+// a database without the table. NULL is right for every existing run.
+func migrateCvAiRunsChoice(db *sql.DB) error {
+	exists, has, err := tableHasColumn(db, "cv_ai_runs", "choice_json")
+	if err != nil || !exists || has {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE cv_ai_runs ADD COLUMN choice_json TEXT`)
 	return err
 }
 
