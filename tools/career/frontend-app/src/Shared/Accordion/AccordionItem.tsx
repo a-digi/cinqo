@@ -21,8 +21,8 @@ interface AccordionItemProps {
   // this prop existed) is a free-standing card; 'nested' is the compact
   // look for an accordion that sits inside another card (a portal
   // link inside its portal): smaller radius and padding, a tinted
-  // background, no hover shadow; 'plain' is a bare labeled, collapsible
-  // group with no border, background or padding (a section inside a
+  // background, no hover shadow; 'plain' is a labeled, collapsible
+  // group on a tinted, bordered background (a section inside a
   // panel, e.g. CrawlPanel's "Crawl instructions"). Purely visual —
   // behavior is identical.
   // See plan/ai/tools/career/step-89-portal-link-accordion.md.
@@ -52,11 +52,13 @@ const VARIANT_CLASSES = {
     body: 'px-4 pb-4',
     overlay: 'rounded-3xl',
   },
+  // A section inside a panel (CrawlPanel's "Crawl instructions"). It has a tinted, bordered background and a hover state so it reads as something that opens:
+  // a bare grey label did not say that it holds more.
   plain: {
-    outer: '',
-    header: 'rounded-md',
-    body: '',
-    overlay: 'rounded-md',
+    outer: 'rounded-xl border border-gray-200 bg-gray-50 transition-colors hover:border-gray-300',
+    header: 'rounded-xl px-3.5 py-2.5 hover:bg-gray-100',
+    body: 'px-3.5 pb-3.5',
+    overlay: 'rounded-xl',
   },
 } as const
 
