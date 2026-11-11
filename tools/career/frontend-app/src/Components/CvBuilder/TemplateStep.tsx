@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { Pagination } from '../Pagination/Pagination'
 import { EyeIcon } from '../../Shared/Icons/icons'
 import { previewImages } from './previewImages'
 import type { CvTemplate } from '../../api'
 import { CvPhotoPicker } from './CvPhotoPicker'
 import { showsPicker, type CvPhoto } from './cvPhotoRules'
+import { clampPage, pageOf, pageSlice, TEMPLATES_PER_PAGE } from './templatePaging'
 
 export interface TemplateStepProps {
   templates: CvTemplate[]
@@ -53,6 +55,10 @@ export function TemplateStep({
 }: TemplateStepProps) {
   const [category, setCategory] = useState<string>(ALL_CATEGORIES)
   const [professions, setProfessions] = useState<string[]>([])
+  // plan 250: the grid shows one page of the filtered templates. It opens on the page that holds the template already chosen (the person came back from a later
+  // step); every filter change goes back to page 1.
+  const [page, setPage] = useState(() => pageOf(templates, templateId))
+  const galleryTop = useRef<HTMLDivElement>(null)
 
   const categories = useMemo(() => {
     const seen = new Set<string>()
@@ -93,6 +99,9 @@ export function TemplateStep({
   }, [templates, professions])
 
   const filtersActive = category !== ALL_CATEGORIES || professions.length > 0
+  // A page that no longer exists (the list got shorter) is never shown empty: it is the last page.
+  const shownPage = clampPage(page, filteredTemplates.length)
+  const pageTemplates = pageSlice(filteredTemplates, shownPage)
 
   return (
     <div className="space-y-4">
@@ -113,7 +122,7 @@ export function TemplateStep({
         <CvPhotoPicker photos={photos} selected={photoChoice} onSelect={onPhotoChoiceChange} />
       )}
 
-      <div>
+      <div ref={galleryTop}>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Template</h3>
 
         <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -124,6 +133,7 @@ export function TemplateStep({
                 type="button"
                 onClick={() => {
                   setCategory(c)
+                  setPage(1)
                 }}
                 className={`rounded-full border px-3 py-1 text-xs font-medium ${
                   category === c ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
@@ -141,7 +151,10 @@ export function TemplateStep({
             searchable
             options={professionOptions}
             value={professions}
-            onChange={setProfessions}
+            onChange={(next) => {
+              setProfessions(next)
+              setPage(1)
+            }}
           />
 
           {filtersActive && (
@@ -150,6 +163,7 @@ export function TemplateStep({
               onClick={() => {
                 setCategory(ALL_CATEGORIES)
                 setProfessions([])
+                setPage(1)
               }}
               className="pb-1 text-xs text-gray-500 underline hover:text-gray-700"
             >
@@ -166,8 +180,8 @@ export function TemplateStep({
 
         {filteredTemplates.length === 0 && <p className="text-sm text-gray-400">No templates match these filters.</p>}
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {filteredTemplates.map((t) => (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4" data-testid="template-grid">
+          {pageTemplates.map((t) => (
             <div
               key={t.id}
               className={`flex h-full flex-col overflow-hidden rounded-md border text-sm shadow-sm ${
@@ -206,6 +220,19 @@ export function TemplateStep({
             </div>
           ))}
         </div>
+
+        {filteredTemplates.length > TEMPLATES_PER_PAGE && (
+          <Pagination
+            page={shownPage}
+            pageSize={TEMPLATES_PER_PAGE}
+            total={filteredTemplates.length}
+            onPageChange={(next) => {
+              setPage(next)
+              // the pager is at the bottom of a long page: bring the top of the gallery back into view
+              galleryTop.current?.scrollIntoView({ block: 'start' })
+            }}
+          />
+        )}
       </div>
     </div>
   )
