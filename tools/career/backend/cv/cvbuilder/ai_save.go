@@ -75,21 +75,36 @@ func SaveCvAiDocument(runID, templateID, title string, data templates.CvData, me
 // checkCvContent is the check of what the AI sends as a CV that does not depend on a run or a persona: the title (trimmed, returned), the
 // person's name, the template and the data. Shared by the run's save and the save for a named persona.
 func checkCvContent(templateID, title string, data templates.CvData) (string, error) {
+	title, err := checkCvTitle(title)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case strings.TrimSpace(data.FullName) == "":
+		return "", errors.New("data.fullName is required")
+	case !templates.IsKnownTemplate(templateID):
+		return "", unknownTemplateError(templateID)
+	}
+	if err := ValidateCvData(data); err != nil {
+		return "", err
+	}
+	return title, nil
+}
+
+// checkCvTitle is the title's part of the content check: trimmed, not empty, not too long.
+func checkCvTitle(title string) (string, error) {
 	title = strings.TrimSpace(title)
 	switch {
 	case title == "":
 		return "", errors.New("title is required")
 	case utf8.RuneCountInString(title) > maxCvAiTitle:
 		return "", fmt.Errorf("title is too long (max %d characters)", maxCvAiTitle)
-	case strings.TrimSpace(data.FullName) == "":
-		return "", errors.New("data.fullName is required")
-	case !templates.IsKnownTemplate(templateID):
-		return "", fmt.Errorf("unknown template id %q — call list_cv_templates for valid ids", templateID)
-	}
-	if err := ValidateCvData(data); err != nil {
-		return "", err
 	}
 	return title, nil
+}
+
+func unknownTemplateError(templateID string) error {
+	return fmt.Errorf("unknown template id %q — call list_cv_templates for valid ids", templateID)
 }
 
 // checkCvPdfShape refuses a pdfResource that is not the id of a promoted Media file (a raw resource link, or nothing).

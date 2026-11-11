@@ -22,17 +22,30 @@ var ErrCvAiChoiceAlreadyHandedOver = errors.New("this run already handed over it
 
 // CvAiChoice is what a run handed over: the design, the title and the data the CV is made from.
 type CvAiChoice struct {
-	TemplateID string           `json:"templateId"`
-	Title      string           `json:"title"`
-	Data       templates.CvData `json:"data"`
+	TemplateID string `json:"templateId"`
+	Title      string `json:"title"`
+	// Data is only there when the AI tailored something (reordered or trimmed skills or experience, tightened the headline or summary); without it the CV is made from the
+	// persona's own data as it is (plan 256, step 6).
+	Data *templates.CvData `json:"data,omitempty"`
 }
 
-// StoreCvAiChoice records the choice of a generating run: the same content checks as SaveCvAiDocument (title, name, design, data), the run must exist, still work, have no CV and
+// StoreCvAiChoice records the choice of a generating run: the same content checks as SaveCvAiDocument (title, design and, when the AI hands data over, its name and its rules; with no
+// data the persona's own data is used later and needs none), the run must exist, still work, have no CV and
 // no choice yet. One UPDATE decides a race: the run takes the choice only while it still works and has neither a CV nor a choice.
-func StoreCvAiChoice(runID, templateID, title string, data templates.CvData) error {
-	title, err := checkCvContent(templateID, title, data)
-	if err != nil {
-		return err
+func StoreCvAiChoice(runID, templateID, title string, data *templates.CvData) error {
+	if data != nil {
+		var err error
+		if title, err = checkCvContent(templateID, title, *data); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		if title, err = checkCvTitle(title); err != nil {
+			return err
+		}
+		if !templates.IsKnownTemplate(templateID) {
+			return unknownTemplateError(templateID)
+		}
 	}
 	var status string
 	var cv, choice sql.NullString
@@ -67,18 +80,20 @@ func StoreCvAiChoice(runID, templateID, title string, data templates.CvData) err
 }
 
 type handOverCvArgs struct {
-	RunID      string             `json:"runId" jsonschema:"the run id given in the request"`
-	TemplateID string             `json:"templateId" jsonschema:"the id of the ONE design you chose, from list_cv_templates"`
-	Title      string             `json:"title" jsonschema:"a short, human-readable name for the CV, e.g. 'Jane Doe - Backend Engineer'"`
-	Data       CvDocumentDataArgs `json:"data" jsonschema:"the CV's data: start from get_persona_cv_defaults and tailor it, never invent anything"`
+	RunID      string              `json:"runId" jsonschema:"the run id given in the request"`
+	TemplateID string              `json:"templateId" jsonschema:"the id of the ONE design you chose, from list_cv_templates"`
+	Title      string              `json:"title" jsonschema:"a short, human-readable name for the CV, e.g. 'Jane Doe - Backend Engineer'"`
+	Data       *CvDocumentDataArgs `json:"data,omitempty" jsonschema:"OPTIONAL, leave it out unless you tailored something: the CV's whole data as you changed it (start from get_persona_cv_defaults, never invent anything). Without it the application uses the persona's own data exactly as it is"`
 }
 
 // RegisterHandOverCv adds hand_over_cv: the last call of a model-driven run.
 func RegisterHandOverCv(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "hand_over_cv",
-		Description: "Hand over the CV you decided on for the persona of this run: the ONE design you chose (templateId, from list_cv_templates), a short title and the CV's data " +
-			"(start from get_persona_cv_defaults, tailor it, never invent a skill, employer, title, date or language). Call this ONCE, as your last tool call. You do NOT render " +
+		Description: "Hand over the CV you decided on for the persona of this run: the ONE design you chose (templateId, from list_cv_templates) and a short title. Pass data ONLY when " +
+			"you tailored something (reordered or trimmed skills or experience, tightened the headline or summary): the CV's whole data as you changed it (start from get_persona_cv_defaults, never " +
+			"invent a skill, employer, title, date or language). Leave data out otherwise: the application then uses the persona's own data exactly as it is, which is the usual case and costs " +
+			"you almost nothing. Call this ONCE, as your last tool call. You do NOT render " +
 			"anything and you do NOT make a PDF: the application makes the finished CV (with the person's photo when it is wanted) from what you hand over. data's free-text fields " +
 			"are PLAIN TEXT ONLY, no HTML or markup. The CV is made for the run's own persona; you cannot choose another. Fails if the run is unknown or no longer running, it already " +
 			"handed over a CV, the template is unknown or data is invalid.",
@@ -86,7 +101,12 @@ func RegisterHandOverCv(server *mcp.Server) {
 		if args.RunID == "" {
 			return db.ErrResult("runId is required"), nil, nil
 		}
-		err := StoreCvAiChoice(args.RunID, args.TemplateID, args.Title, args.Data.ToCvData())
+		var data *templates.CvData
+		if args.Data != nil {
+			d := args.Data.ToCvData()
+			data = &d
+		}
+		err := StoreCvAiChoice(args.RunID, args.TemplateID, args.Title, data)
 		switch {
 		case errors.Is(err, ErrUnknownCvAiRun):
 			return db.ErrResult(fmt.Sprintf("unknown run id %q", args.RunID)), nil, nil

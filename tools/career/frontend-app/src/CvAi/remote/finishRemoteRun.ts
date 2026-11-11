@@ -1,4 +1,13 @@
-import { attachCvToRun, createCvDocument, deleteCvDocument, fetchCvAiRuns, fetchCvPhotoStatus, type CvAiRun, type CvData } from '../../api'
+import {
+  attachCvToRun,
+  createCvDocument,
+  deleteCvDocument,
+  fetchCvAiRuns,
+  fetchCvPersonaDefaults,
+  fetchCvPhotoStatus,
+  type CvAiRun,
+  type CvData,
+} from '../../api'
 import { NO_CV_SAVED_MESSAGE } from '../cvAiRules'
 import { decidePhoto, type PhotoDecision } from '../photoDecision'
 
@@ -8,6 +17,8 @@ import { decidePhoto, type PhotoDecision } from '../photoDecision'
 export interface FinishRemoteDeps {
   // The run as the server has it now (its choice, its CV), or undefined when it is gone.
   loadRun: (personaId: string, runId: string) => Promise<CvAiRun | undefined>
+  // The target role's own data as it is, used when the AI handed no data over (it tailored nothing).
+  loadDefaults: (personaId: string) => Promise<CvData>
   hasProfilePhoto: (personaId: string) => Promise<boolean>
   createCv: (personaId: string, templateId: string, title: string, data: CvData, attachPhoto: boolean) => Promise<{ id: string }>
   attach: (runId: string, cvDocumentId: string) => Promise<void>
@@ -30,7 +41,9 @@ export async function finishRemoteCvRun(deps: FinishRemoteDeps, run: { id: strin
   // a photo that cannot be looked up counts as no photo: it never stops the CV
   const profileHasPhoto = await deps.hasProfilePhoto(run.personaId).catch(() => false)
   const photo = decidePhoto(profileHasPhoto, current.focus)
-  const doc = await deps.createCv(run.personaId, current.choice.templateId, current.choice.title, current.choice.data, photo.attach)
+  // the AI's tailored data when it handed some over, else the role's own data exactly as it is (step 6): the common case, which costs the AI almost nothing and cannot lose content
+  const data = current.choice.data ?? (await deps.loadDefaults(run.personaId))
+  const doc = await deps.createCv(run.personaId, current.choice.templateId, current.choice.title, data, photo.attach)
   try {
     await deps.attach(run.id, doc.id)
   } catch (err) {
@@ -46,6 +59,7 @@ export function finishRemoteCvRunWithApi(run: { id: string; personaId: string })
   return finishRemoteCvRun(
     {
       loadRun: async (personaId, runId) => (await fetchCvAiRuns(personaId)).find((r) => r.id === runId),
+      loadDefaults: fetchCvPersonaDefaults,
       hasProfilePhoto: async (personaId) => (await fetchCvPhotoStatus(personaId)).hasPhoto,
       createCv: (personaId, templateId, title, data, attachPhoto) => createCvDocument(personaId, templateId, title, data, attachPhoto),
       attach: attachCvToRun,
