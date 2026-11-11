@@ -34,7 +34,8 @@ func RegisterListCvTemplates(server *mcp.Server) {
 		Description: "List every available CV template design (id, name, description, style category, and which professions " +
 			"it's best suited for). Pick one of these ids for render_cv_document — choose based on the persona/job at hand, " +
 			"e.g. an 'ATS-Friendly' category template for a large-company application likely using automated screening, or a " +
-			"'Modern'/'Creative' one for a design-facing role.",
+			"'Modern'/'Creative' one for a design-facing role. The 'ATS-Friendly' designs are plain layouts meant to have no profile " +
+			"photo; every other design has a place for the person's photo, so choose one of those when the CV is wanted with a photo.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listCvTemplatesArgs) (*mcp.CallToolResult, any, error) {
 		return db.JSONResult(map[string]any{"templates": templates.ListTemplates()})
 	})

@@ -1,4 +1,4 @@
-import { attachCvToRun, createCvAiRun, createCvDocument, fetchCvPersonaDefaults, fetchCvTemplates } from '../../api'
+import { attachCvToRun, createCvAiRun, createCvDocument, fetchCvPersonaDefaults, fetchCvPhotoStatus, fetchCvTemplates } from '../../api'
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, type SendMessageResult } from '../../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../../Cinqo/Platform/aiChoice'
@@ -34,9 +34,10 @@ export async function startLocalCvRun(persona: { id: string; name: string }, foc
         {
           loadDefaults: fetchCvPersonaDefaults,
           loadTemplates: fetchCvTemplates,
+          hasProfilePhoto: async (personaId) => (await fetchCvPhotoStatus(personaId)).hasPhoto,
           ask: async (prompt) => (await sendMessage(conversation.id, prompt, { fresh: true })).content,
-          // The AI's CVs have no photo, as for the remote driver.
-          createCv: (personaId, templateId, title, data) => createCvDocument(personaId, templateId, title, data, false),
+          // With the profile's own default photo when the CV carries one (the server takes it from the profile; the model never names a file).
+          createCv: (personaId, templateId, title, data, attachPhoto) => createCvDocument(personaId, templateId, title, data, attachPhoto),
           attach: attachCvToRun,
         },
         persona,

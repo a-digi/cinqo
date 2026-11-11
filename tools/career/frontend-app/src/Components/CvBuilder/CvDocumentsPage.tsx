@@ -232,6 +232,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
             <CreateCvWithAi
               ai={ai}
               platforms={ai.platforms}
+              personaId={personaId}
               personaName={personaName}
               disabledReason={
                 !ai.platform

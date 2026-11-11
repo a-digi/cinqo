@@ -1,8 +1,9 @@
-import { createCvAiRun } from '../../api'
+import { createCvAiRun, fetchCvPhotoStatus } from '../../api'
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, type SendMessageResult } from '../../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../../Cinqo/Platform/aiChoice'
 import { cvAiConversationTitle } from '../cvAiRules'
+import { decidePhoto } from '../photoDecision'
 import { buildCvAiPrompt } from './buildCvAiPrompt'
 import { CV_AI_RUN_TOOLS, RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from './cvAiTools'
 
@@ -37,5 +38,12 @@ export async function startRemoteCvRun(persona: { id: string; name: string }, fo
   }
   // Recorded before the first message, so a reload in between still has something to resume.
   const runId = await createCvAiRun(persona.id, conversation.id, focus.trim())
-  return { runId, turn: () => sendMessage(conversation.id, buildCvAiPrompt(persona, focus, runId)) }
+  // Whether the CV is wanted with the profile's photo (the profile has one and the note does not ask for none): it decides which designs the prompt points the AI to. A failed lookup
+  // counts as no photo, so it never stops the run.
+  const profileHasPhoto = await fetchCvPhotoStatus(persona.id).then(
+    (s) => s.hasPhoto,
+    () => false,
+  )
+  const withPhoto = decidePhoto(profileHasPhoto, focus).attach
+  return { runId, turn: () => sendMessage(conversation.id, buildCvAiPrompt(persona, focus, runId, withPhoto)) }
 }

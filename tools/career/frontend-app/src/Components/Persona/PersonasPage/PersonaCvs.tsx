@@ -147,6 +147,7 @@ export function PersonaCvs({
         <CreateCvWithAi
           ai={ai}
           platforms={platforms}
+          personaId={personaId}
           personaName={personaName}
           disabledReason={
             !ai.platform

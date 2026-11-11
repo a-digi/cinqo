@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { fetchCvPhotoStatus } from '../api'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { resolveAiOverride, type AiOverride } from '../Cinqo/Platform/aiOverride'
 import type { Platform } from '../Cinqo/Platform/platformRepository'
@@ -7,6 +8,8 @@ import { inputClass } from '../Shared/inputClass'
 import { Modal } from '../Shared/Modal/Modal'
 import { SETTINGS_PATH } from '../paths'
 import { CvAiPicker } from './CvAiPicker'
+import { cvAiDriverFor } from './cvAiRunner'
+import { decidePhoto } from './photoDecision'
 
 // The "Create CV with AI" button and its dialog (step 115): the optional note on what the CV is for,
 // the AI that will be used, and one line about the data going to it. The button says why it is
@@ -17,6 +20,7 @@ export function CreateCvWithAi({
   disabledReason,
   ai,
   platforms,
+  personaId,
   personaName,
   onStart,
 }: {
@@ -24,6 +28,8 @@ export function CreateCvWithAi({
   disabledReason: string
   ai: AiChoice
   platforms: Platform[]
+  // The target role, to look up whether its profile has a photo (plan 256).
+  personaId: string
   personaName: string
   onStart: (focus: string, choice: AiChoice) => Promise<void>
 }) {
@@ -33,6 +39,24 @@ export function CreateCvWithAi({
   const [error, setError] = useState('')
   const [override, setOverride] = useState<AiOverride | null>(null)
   const usable = platforms
+  // plan 256: whether the profile has a photo, looked up when the dialog opens (null until known or when it cannot be looked up).
+  const [hasPhoto, setHasPhoto] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setHasPhoto(null)
+    fetchCvPhotoStatus(personaId).then(
+      (status) => {
+        if (!cancelled) setHasPhoto(status.hasPhoto)
+      },
+      () => {
+        if (!cancelled) setHasPhoto(null)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [open, personaId])
   const choice = resolveAiOverride({ platform: ai.platform, model: ai.model }, usable, override)
 
   function close() {
@@ -59,6 +83,20 @@ export function CreateCvWithAi({
       })
   }
 
+  // What the CV will carry, said before Start (plan 256). The model-driven (remote) path cannot add the photo yet, so it says so instead of promising it.
+  const photoDecision = hasPhoto === null ? null : decidePhoto(hasPhoto, focus)
+  const remoteDriver = cvAiDriverFor({ platform: choice.platform, model: choice.model, source: ai.source }) === 'remote'
+  const photoLine = !choice.platform
+    ? ''
+    : remoteDriver
+      ? 'This AI makes the CV without a photo; you can make a CV by hand if you want one with your photo.'
+      : photoDecision === null
+        ? ''
+        : photoDecision.reason === 'photo'
+          ? 'The CV includes your profile photo. Write "without photo" in the note to leave it out.'
+          : photoDecision.reason === 'asked-none'
+            ? 'The CV will have no photo, as you asked.'
+            : 'Your profile has no photo, so the CV has none.'
   const aiText = choice.platform ? `${choice.platform.name}${choice.model ? ` · ${choice.model}` : ''}` : ''
 
   return (
@@ -80,7 +118,7 @@ export function CreateCvWithAi({
         <p className="mb-3 text-sm text-gray-600">
           The AI reads the target role <span className="font-medium text-gray-800">{personaName}</span> (details, skills and experience),
           chooses one of the CV designs and creates the CV. It only uses what is already filled in, and the CV appears in the list below
-          when it is done. It has no photo; you can make a CV by hand if you want one.
+          when it is done.
         </p>
         <label className="block text-xs font-medium text-gray-500">
           What is this CV for? (optional)
@@ -95,6 +133,11 @@ export function CreateCvWithAi({
             className={`mt-1 ${inputClass}`}
           />
         </label>
+        {photoLine && (
+          <p data-testid="cv-ai-photo-line" className="mt-2 text-xs text-gray-500">
+            {photoLine}
+          </p>
+        )}
         {usable.length > 0 && (
           <>
             <p className="mt-4 text-xs font-medium text-gray-500">AI for this CV</p>
