@@ -449,30 +449,30 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
 
   return (
     <div className="text-sm text-gray-800" data-testid="job-detail-pick">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold text-gray-900">Pick the data of a job page</h3>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Choose where a job page says its title, company, location, date and description, without AI.
-          </p>
-          {link.jobDetailCrawlInstructions && originLabel(link.jobDetailInstructionsOrigin) !== '' && (
-            <span
-              className="mt-2 inline-block rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600"
-              data-testid="job-detail-origin"
-            >
-              Instructions now: {originLabel(link.jobDetailInstructionsOrigin)}
-            </span>
-          )}
+      <div className="min-w-0">
+        <h3 className="text-base font-semibold text-gray-900">Pick the data of a job page</h3>
+        <p className="mt-0.5 text-sm text-gray-500">
+          Choose where a job page says its title, company, location, date and description, without AI.
+        </p>
+        <div className="mt-3">
+          <button
+            type="button"
+            className={primaryClass}
+            onClick={() => {
+              setOpen((o) => !o)
+            }}
+          >
+            {open ? 'Close' : 'Choose the data'}
+          </button>
         </div>
-        <button
-          type="button"
-          className={primaryClass}
-          onClick={() => {
-            setOpen((o) => !o)
-          }}
-        >
-          {open ? 'Close' : 'Choose the data'}
-        </button>
+        {link.jobDetailCrawlInstructions && originLabel(link.jobDetailInstructionsOrigin) !== '' && (
+          <span
+            className="mt-2 inline-block rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600"
+            data-testid="job-detail-origin"
+          >
+            Instructions now: {originLabel(link.jobDetailInstructionsOrigin)}
+          </span>
+        )}
       </div>
 
       {link.jobDetailCrawlInstructions && fillNote(link.jobDetailInstructionsOrigin) !== '' && (
