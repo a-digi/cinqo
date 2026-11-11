@@ -38,8 +38,12 @@ export function Pagination({ page, pageSize, total, onPageChange, numbered = fal
         </button>
         {numbered ? (
           <>
-            <span className="sr-only" aria-live="polite">
-              Page {page} of {pageCount}
+            {/* The screen-reader text is absolutely positioned, so it needs a positioned parent: without one it is placed against the page body, far below the pager, and
+                stretches the document past the app's own scroll area (a white page under the end of the content). */}
+            <span className="relative">
+              <span className="sr-only" aria-live="polite">
+                Page {page} of {pageCount}
+              </span>
             </span>
             <ol className="flex items-center gap-1" aria-label="Pages">
               {pageWindow(page, pageCount).map((slot, i) =>
