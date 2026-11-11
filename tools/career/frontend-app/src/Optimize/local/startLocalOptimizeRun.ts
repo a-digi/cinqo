@@ -1,0 +1,50 @@
+import { createOptimizeRun, fetchOptimizeSubject, storeOptimizeSuggestion, type OptimizeSubjectKind } from '../../api'
+import { CoreApiError } from '../../Cinqo/Http/client'
+import { createConversation, sendMessage, type SendMessageResult } from '../../Cinqo/Conversation/conversation'
+import type { AiChoice } from '../../Cinqo/Platform/aiChoice'
+import { optimizeConversationTitle } from '../optimizeRules'
+import { runLocalOptimize } from './runLocalOptimize'
+
+export interface StartedLocalOptimizeRun {
+  runId: string
+  turn: () => Promise<SendMessageResult>
+}
+
+// Starts a run for a model with the code driver. The hidden conversation is created with no tool list: the local platform offers a conversation without one no tools at all, so nothing the
+// model says can call anything. The run is recorded (driver 'local', no conversation to resume) before the first question. The turn is the whole code-driven run: it resolves with one plain
+// sentence (the run then ends ready) and rejects with a readable reason (the run then ends failed).
+export async function startLocalOptimizeRun(
+  subject: { kind: OptimizeSubjectKind; id: string; name: string },
+  focus: string,
+  ai: AiChoice,
+  onProgress?: (p: { done: number; total: number }) => void,
+): Promise<StartedLocalOptimizeRun> {
+  if (!ai.platform) throw new Error('No AI platform is available. Choose one in Settings.')
+  const conversation = await createConversation({
+    title: optimizeConversationTitle(subject.name),
+    platformId: ai.platform.id,
+    model: ai.model ?? undefined,
+    hidden: true,
+  }).catch((err: unknown) => {
+    if (err instanceof CoreApiError && (err.status === 401 || err.status === 403)) {
+      throw new Error('Ask an admin to grant you access to AI conversations.')
+    }
+    throw err
+  })
+  const runId = await createOptimizeRun(subject.kind, subject.id, conversation.id, 'local', focus.trim())
+  return {
+    runId,
+    turn: async () => {
+      const result = await runLocalOptimize(
+        {
+          loadTexts: async () => (await fetchOptimizeSubject(subject.kind, subject.id)).texts,
+          ask: async (prompt) => (await sendMessage(conversation.id, prompt, { fresh: true })).content,
+          store: (s) => storeOptimizeSuggestion({ runId, ...s }),
+          onProgress,
+        },
+        focus,
+      )
+      return { role: 'assistant', content: result.summary, createdAt: new Date().toISOString() }
+    },
+  }
+}

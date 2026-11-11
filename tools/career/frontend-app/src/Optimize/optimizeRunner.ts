@@ -1,10 +1,11 @@
 // optimizeRunner.ts — the one place that starts and resumes the AI turn of an "Optimize with AI" run (plan 258). The drivers live in their own folders and never import each other; this file
-// is the only one that imports them. A model the platform marks with the code driver (`drivers[model] === 'code'`, Phi-4-mini today) cannot follow a prompt with tools, so it needs the
-// local driver (code asks it one text at a time: step 5); every other model takes the one-prompt-with-tools path (remote/).
+// is the only one that imports them. A model the platform marks with the code driver (`drivers[model] === 'code'`, Phi-4-mini today) cannot follow a prompt with tools, so code does
+// the work and asks it one text at a time (local/); every other model takes the one-prompt-with-tools path (remote/).
 import type { OptimizeRun, OptimizeSubjectKind } from '../api'
 import { awaitTurnCompletion, type SendMessageResult } from '../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { usesCodeDriver } from '../Cinqo/Platform/modelLabels'
+import { startLocalOptimizeRun } from './local/startLocalOptimizeRun'
 import { startRemoteOptimizeRun } from './remote/startRemoteOptimizeRun'
 
 export interface StartedOptimizeRun {
@@ -19,16 +20,22 @@ export function optimizeDriverFor(ai: AiChoice): OptimizeDriver {
   return ai.platform && usesCodeDriver(ai.platform, ai.model) ? 'local' : 'remote'
 }
 
-export const LOCAL_NOT_AVAILABLE_MESSAGE = 'This small local model cannot optimize texts yet. Choose another AI for this run.'
+export interface OptimizeProgress {
+  done: number
+  total: number
+}
 
-// Starts a run for a profile or a persona. Rejects (with a readable message) when the conversation or the record fails.
+// Starts a run for a profile or a persona. Rejects (with a readable message) when the conversation or the record fails. onProgress is told how far a code-driven run is (a tool conversation
+// has no such count).
 export function startOptimizeRun(
   subject: { kind: OptimizeSubjectKind; id: string; name: string },
   focus: string,
   ai: AiChoice,
+  onProgress?: (p: OptimizeProgress) => void,
 ): Promise<StartedOptimizeRun> {
-  if (optimizeDriverFor(ai) === 'local') return Promise.reject(new Error(LOCAL_NOT_AVAILABLE_MESSAGE))
-  return startRemoteOptimizeRun(subject, focus, ai)
+  return optimizeDriverFor(ai) === 'local'
+    ? startLocalOptimizeRun(subject, focus, ai, onProgress)
+    : startRemoteOptimizeRun(subject, focus, ai)
 }
 
 export const RUN_LOST_MESSAGE = 'The page was closed before the AI finished. Start it again.'

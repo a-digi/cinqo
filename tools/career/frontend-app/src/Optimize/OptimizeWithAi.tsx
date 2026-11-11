@@ -105,7 +105,11 @@ export function OptimizeWithAi({
             className="flex shrink-0 items-center gap-1.5 rounded-md border border-purple-200 bg-white px-3.5 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <SparkleIcon />
-            {state.view === 'working' ? 'Optimizing…' : 'Optimize with AI'}
+            {state.view === 'working'
+              ? runs.progress && runs.progress.total > 0
+                ? `Optimizing… ${String(runs.progress.done)} of ${String(runs.progress.total)}`
+                : 'Optimizing…'
+              : 'Optimize with AI'}
           </button>
         )}
       </div>

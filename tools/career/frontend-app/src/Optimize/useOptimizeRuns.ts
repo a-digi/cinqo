@@ -13,7 +13,7 @@ import { CoreApiError } from '../Cinqo/Http/client'
 import type { SendMessageResult } from '../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { NOTHING_TO_IMPROVE } from './optimizeRules'
-import { resumeOptimizeRun, startOptimizeRun } from './optimizeRunner'
+import { resumeOptimizeRun, startOptimizeRun, type OptimizeProgress } from './optimizeRunner'
 
 // The runs of one subject's "Optimize with AI" (plan 258): the list, starting a run, finishing it when the AI's turn ends, and the person's decisions. Same shape as useCvAiRuns: a run
 // is recorded BEFORE the first message so a reload can resume it; every run still generating is picked up again by waiting for its turn. The AI turn lives in the core app (or in
@@ -23,6 +23,8 @@ export function useOptimizeRuns(subjectKind: OptimizeSubjectKind, subjectId: str
   const [error, setError] = useState('')
   // One line about what just happened that leaves no run behind ("nothing to improve"); the person dismisses it.
   const [notice, setNotice] = useState('')
+  // How far a code-driven run is (null for a tool conversation, which has no count, and when nothing is running).
+  const [progress, setProgress] = useState<OptimizeProgress | null>(null)
   const watching = useRef(new Set<string>())
   const seq = useRef(0)
 
@@ -62,6 +64,7 @@ export function useOptimizeRuns(subjectKind: OptimizeSubjectKind, subjectId: str
         })
         .then(() => {
           watching.current.delete(runId)
+          setProgress(null)
           return reload()
         })
     },
@@ -98,7 +101,8 @@ export function useOptimizeRuns(subjectKind: OptimizeSubjectKind, subjectId: str
   const start = useCallback(
     async (subject: { kind: OptimizeSubjectKind; id: string; name: string }, focus: string, ai: AiChoice) => {
       setNotice('')
-      const { runId, turn } = await startOptimizeRun(subject, focus, ai)
+      setProgress(null)
+      const { runId, turn } = await startOptimizeRun(subject, focus, ai, setProgress)
       await reload()
       watch(runId, turn)
     },
@@ -128,6 +132,7 @@ export function useOptimizeRuns(subjectKind: OptimizeSubjectKind, subjectId: str
     runs,
     error,
     notice,
+    progress,
     clearNotice: () => {
       setNotice('')
     },
