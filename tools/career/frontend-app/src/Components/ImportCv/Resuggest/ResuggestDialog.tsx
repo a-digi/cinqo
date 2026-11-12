@@ -43,9 +43,16 @@ export function ResuggestDialog({
   const [text, setText] = useState('')
   const [lines, setLines] = useState<ResuggestLine[]>([])
   const [busy, setBusy] = useState(false)
+  // The AI picker is a secondary thing: closed until the person asks to change it.
+  const [pickerOpen, setPickerOpen] = useState(false)
   // The chat exists from the first send on; its AI is then fixed.
   const [started, setStarted] = useState<{ name: string } | null>(null)
   const chat = useRef<ResuggestChat | null>(null)
+  // The comment is what the dialog is for: the cursor starts in it.
+  const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    box.current?.focus()
+  }, [])
   const firstSent = useRef(false)
 
   useEffect(() => {
@@ -116,28 +123,6 @@ export function ResuggestDialog({
         {scopeChip(scope)}
       </span>
 
-      {started === null && ai.platforms.length > 0 && (
-        <>
-          <p className="mt-4 text-xs font-medium text-gray-500">AI for this chat</p>
-          <CvAiPicker
-            choice={choice}
-            settings={{ platform: ai.platform, model: ai.model }}
-            platforms={ai.platforms}
-            onChange={(platformId, model) => {
-              setOverride({ platformId, model })
-            }}
-            onReset={() => {
-              setOverride(null)
-            }}
-          />
-        </>
-      )}
-      {started !== null && (
-        <p className="mt-4 text-xs text-gray-500">
-          AI for this chat: <span className="font-medium text-gray-700">{started.name}</span>
-        </p>
-      )}
-
       <div role="log" aria-live="polite" data-testid="resuggest-log" className="mt-4 space-y-2">
         {lines.map((l, i) => (
           <p
@@ -165,25 +150,44 @@ export function ResuggestDialog({
         )}
       </div>
 
-      <label className="mt-4 block text-xs font-medium text-gray-500">
-        {lines.length === 0 ? 'What should change? (optional)' : 'Say what else should change'}
+      <label className="mt-5 block text-sm font-semibold text-gray-900">
+        {lines.length === 0 ? 'What should change?' : 'Say what else should change'}
         <textarea
           value={text}
           disabled={busy}
+          ref={box}
           onChange={(e) => {
             setText(e.target.value)
           }}
           maxLength={MAX_WISH_LENGTH}
-          rows={3}
-          placeholder="e.g. add the cloud skills from the CV, or shorten the bullets"
-          className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-900 disabled:opacity-60"
+          rows={5}
+          placeholder="e.g. add the cloud skills from the CV, or shorten the bullets. Leave it empty and the AI looks at this again and improves it."
+          className="mt-2 w-full rounded-lg border border-gray-300 px-3.5 py-3 text-sm font-normal text-gray-900 shadow-sm focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100 disabled:opacity-60"
         />
       </label>
-      <p className="mt-2 text-xs text-gray-500">
-        The CV and these suggestions are sent to <span className="font-medium text-gray-700">{aiText || 'the AI platform'}</span>.
+
+      <div data-testid="resuggest-ai-line" className="mt-3 text-xs text-gray-500">
+        <span>
+          AI: <span className="font-medium text-gray-700">{aiText || 'none set up'}</span>
+        </span>
+        {started === null && ai.platforms.length > 0 && (
+          <>
+            {' · '}
+            <button
+              type="button"
+              aria-expanded={pickerOpen}
+              onClick={() => {
+                setPickerOpen((v) => !v)
+              }}
+              className="underline hover:text-gray-900"
+            >
+              {pickerOpen ? 'Hide' : 'Change'}
+            </button>
+          </>
+        )}
         {ai.platforms.length === 0 && ai.loaded && (
           <>
-            {' '}
+            {' · '}
             <button
               type="button"
               onClick={() => {
@@ -195,7 +199,21 @@ export function ResuggestDialog({
             </button>
           </>
         )}
-      </p>
+        <span className="block text-gray-400">Your CV and these suggestions are sent to it.</span>
+        {started === null && pickerOpen && ai.platforms.length > 0 && (
+          <CvAiPicker
+            choice={choice}
+            settings={{ platform: ai.platform, model: ai.model }}
+            platforms={ai.platforms}
+            onChange={(platformId, model) => {
+              setOverride({ platformId, model })
+            }}
+            onReset={() => {
+              setOverride(null)
+            }}
+          />
+        )}
+      </div>
       <div className="mt-5 flex justify-end gap-2">
         <button
           type="button"
