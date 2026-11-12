@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchCVImportRuns, deleteCVImportRun, type CVImportRun } from '../../api'
+import { fetchCVImportRuns, deleteCVImportRun, fetchProfiles, type CVImportRun, type Profile } from '../../api'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
@@ -10,6 +10,10 @@ import { FailureNotice } from './FailureNotice'
 import { ImportStartPanel } from './ImportStartPanel'
 import { useImportStart } from './useImportStart'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
+import { writeAddress } from '../../Shared/AddressState/writeAddress'
+import { ImportTargetPicker } from './ImportTargetPicker'
+import { buildImportSearch, parseImportTarget, resolveImportTarget } from './importTargetRules'
 
 // Import CV's own page — upload a CV PDF (or process an earlier one again) and the import history. The analysis itself starts here:
 // an AI conversation reads the file and hands a proposal over (step 5). As soon as the run is recorded the page moves to the run's
@@ -39,12 +43,33 @@ export function ImportCvPage() {
     loadRuns()
   }, [])
 
+  // Which profile the import goes into (plan 261): whatever the ADDRESS says (?profileId=, from a profile's "Import CV" link), checked against the
+  // profiles once they are read; an id that is no profile of the person falls back to a new profile and is dropped from the address. null: not read yet.
+  const [profiles, setProfiles] = useState<Profile[] | null>(null)
+  const address = useAddressSearch(IMPORT_CV_PATH)
+  const target = resolveImportTarget(parseImportTarget(address.search), profiles)
+
+  useEffect(() => {
+    fetchProfiles()
+      .then(setProfiles)
+      .catch(() => {
+        // Non-fatal: without the list there is nothing to choose, and the import makes a new profile as before.
+        setProfiles([])
+      })
+  }, [])
+
+  useEffect(() => {
+    if (profiles !== null && window.location.search !== buildImportSearch(target)) {
+      writeAddress(window, IMPORT_CV_PATH, buildImportSearch(target), 'replace')
+    }
+  }, [address.tick, profiles, target])
+
   // Starting an import (the AI choice, the upload, the analysis) is the hook's: the import's own page uses the same one (plan 242).
-  const start = useImportStart({ onRunsChanged: loadRuns })
+  const start = useImportStart({ onRunsChanged: loadRuns, targetProfileId: target })
 
   async function handleProcessAgain(run: CVImportRun) {
     setRunActionError('')
-    const problem = await start.startFromStored(run.mediaFileId, run.originalFilename)
+    const problem = await start.startFromStored(run.mediaFileId, run.originalFilename, run.targetProfileId ?? '')
     if (problem) setRunActionError(problem)
   }
 
@@ -73,6 +98,15 @@ export function ImportCvPage() {
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
+          {start.state === 'upload' && profiles !== null && (
+            <ImportTargetPicker
+              profiles={profiles}
+              target={target}
+              onChange={(id) => {
+                writeAddress(window, IMPORT_CV_PATH, buildImportSearch(id), 'replace')
+              }}
+            />
+          )}
           <ImportStartPanel start={start} />
 
           {start.state === 'upload' && runs !== null && runs.length > 0 && (

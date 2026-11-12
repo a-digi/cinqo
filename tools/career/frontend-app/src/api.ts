@@ -1813,6 +1813,8 @@ export interface CVImportRun {
   error?: string
   // "code" for a run whose steps the page does itself, asking a model small questions (plan 209); absent for the AI working with tools.
   driver?: string
+  // The profile the person chose to import into (plan 261); absent: a new profile is made from the CV. It can name a profile deleted since.
+  targetProfileId?: string
   // What a generating run has stored so far; absent when nothing was.
   progress?: CVImportProgress
   // The version of the suggestions (plan 257): it changes whenever the stored proposal does (the AI changed it in the chat). Absent while the run has no proposal.
@@ -1856,12 +1858,14 @@ export async function createCVImportRun(params: {
   conversationId: string
   aiProposal?: unknown
   driver?: 'code'
+  // The profile to import the CV into (plan 261); leave it out (or empty) for a new profile made from the CV.
+  targetProfileId?: string
 }): Promise<string> {
   const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    body: JSON.stringify({ ...params, targetProfileId: params.targetProfileId === '' ? undefined : params.targetProfileId }),
   })
   const body = await jsonOrThrow<{ id: string }>(res, 'create cv import run')
   return body.id

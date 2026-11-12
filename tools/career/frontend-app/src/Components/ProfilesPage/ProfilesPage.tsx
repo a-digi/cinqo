@@ -1,10 +1,18 @@
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { useEffect, useState } from 'react'
 import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, removeProfileExternalLink, type Profile } from '../../api'
-import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
+import { CameraIcon, PlusIcon, UploadIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { GUIDE_PATH, NEW_PROFILE_PATH, PROFILES_PATH, VIEW_PROFILE_PATH, photosPathFor, profileSettingsPathFor } from '../../paths'
+import {
+  GUIDE_PATH,
+  NEW_PROFILE_PATH,
+  PROFILES_PATH,
+  VIEW_PROFILE_PATH,
+  importCvPathFor,
+  photosPathFor,
+  profileSettingsPathFor,
+} from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
@@ -176,6 +184,14 @@ export function ProfilesPage() {
                   <PlusIcon />
                   New profile
                 </button>
+                {/* Plan 261: a link to the Import CV page (a real link, so it can open in a new tab); the page then makes a new profile from the CV. */}
+                <AppLink
+                  href={importCvPathFor()}
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-blue-200 bg-white px-3.5 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-50"
+                >
+                  <UploadIcon className="h-4 w-4" />
+                  Import CV
+                </AppLink>
                 <p className="min-w-0 flex-1 text-xs text-gray-500">
                   Deleting a profile permanently deletes its target roles and everything they own (details, skills, experience), with no
                   further confirmation.
@@ -288,6 +304,15 @@ export function ProfilesPage() {
                             >
                               View
                             </button>
+                            {/* Plan 261: import a CV into THIS profile: the Import CV page opens with the profile already chosen. */}
+                            <AppLink
+                              href={importCvPathFor(p.id)}
+                              aria-label={`Import a CV into ${name}`}
+                              className="flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              <UploadIcon className="h-3 w-3" />
+                              Import CV
+                            </AppLink>
                             {/* The photo belongs to the profile: its photo page is its own address. */}
                             <button
                               type="button"

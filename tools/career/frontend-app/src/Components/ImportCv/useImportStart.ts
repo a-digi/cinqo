@@ -35,8 +35,9 @@ export type ImportStartState = 'upload' | 'analyzing' | 'error'
 // Everything that starts a CV import, taken out of ImportCvPage (plan/ai/tools/career/step-242-restart-cv-import-inside-the-import-page.md, step 1) so
 // that the import's own page can start one as well: the AI choice for this import (plan 212), the upload, and the analysis (the code driver, the
 // step-by-step way or the one long prompt) up to the moment the run is recorded and the page moves to the run's own address. No behaviour of the
-// upload page changed by moving it. onRunsChanged is called when the history changed (a run was recorded or ended).
-export function useImportStart({ onRunsChanged }: { onRunsChanged: () => void }) {
+// upload page changed by moving it. onRunsChanged is called when the history changed (a run was recorded or ended). targetProfileId (plan 261) is the
+// profile the import goes into ('' = a new profile made from the CV): it is recorded on the run when the run is made.
+export function useImportStart({ onRunsChanged, targetProfileId = '' }: { onRunsChanged: () => void; targetProfileId?: string }) {
   const [state, setState] = useState<ImportStartState>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [fileName, setFileName] = useState('')
@@ -76,7 +77,7 @@ export function useImportStart({ onRunsChanged }: { onRunsChanged: () => void })
   // the AI hands the proposal over by calling suggest_cv_import with the run id, which stores it; its last message is one plain
   // sentence. Only this page can end the run (the AI's turn lives in the core app), so it does, as ready or failed. See
   // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
-  async function runAnalysis(fileId: string, originalFilename: string) {
+  async function runAnalysis(fileId: string, originalFilename: string, target: string) {
     setFileName(originalFilename)
     setState('analyzing')
     try {
@@ -93,7 +94,8 @@ export function useImportStart({ onRunsChanged }: { onRunsChanged: () => void })
             {
               startConversation: async () =>
                 (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
-              recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId, driver: 'code' }),
+              recordRun: (conversationId) =>
+                createCVImportRun({ fileId, originalFilename, conversationId, driver: 'code', targetProfileId: target }),
               // Every question is a fresh turn of the run's own conversation (plan 210): the chat shows each question and its answer as they happen,
               // and the model is sent that question only (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
               ask: async (prompt, conversationId) => (await sendMessage(conversationId, prompt, { fresh: true })).content,
@@ -126,7 +128,7 @@ export function useImportStart({ onRunsChanged }: { onRunsChanged: () => void })
           if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
           return conversation.id
         },
-        recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
+        recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId, targetProfileId: target }),
         askAi: async (conversationId, runId, followUp, settings) => {
           const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId), settings)
           return { reply: message.content, toolErrors: message.toolErrors, toolsCalled: message.toolsCalled }
@@ -199,15 +201,16 @@ export function useImportStart({ onRunsChanged }: { onRunsChanged: () => void })
     // The upload itself succeeded — any failure from here on is a real
     // 'error' state, not an inline retry-in-place message, since the
     // uploaded file (and its capability URL) are already consumed.
-    await runAnalysis(upload.fileId, file.name)
+    await runAnalysis(upload.fileId, file.name, targetProfileId)
   }
 
   // Starts an analysis of a CV that is already stored (an earlier upload), as "Process again" does. Returns the reason it did not start (a platform
-  // whose context is too small), or null when it started.
-  async function startFromStored(fileId: string, originalFilename: string): Promise<string | null> {
+  // whose context is too small), or null when it started. The profile is the hook's own unless `target` is given (a "Process again" of an old run keeps
+  // that run's own: '' means that run had none).
+  async function startFromStored(fileId: string, originalFilename: string, target?: string): Promise<string | null> {
     const tooSmall = await contextProblem()
     if (tooSmall) return tooSmall
-    await runAnalysis(fileId, originalFilename)
+    await runAnalysis(fileId, originalFilename, target ?? targetProfileId)
     return null
   }
 

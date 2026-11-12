@@ -14,6 +14,7 @@ export function PersonaList({
   selectedId,
   renderExtra,
   renderGroupExtra,
+  renderAction,
 }: {
   personas: Persona[]
   profiles: Profile[]
@@ -25,9 +26,13 @@ export function PersonaList({
   renderExtra?: (persona: Persona) => React.ReactNode
   // What sits at the right end of a profile's heading (a count); nothing when left out.
   renderGroupExtra?: (group: PersonaGroup<Persona>) => React.ReactNode
+  // A button (or anything interactive) at the right of an item, beside the link or the picking button and never inside it (a button inside
+  // a link is invalid and a click would also open the link). Leave it out and the item is the plain link or button as before. Plan 260.
+  renderAction?: (persona: Persona) => React.ReactNode
 }) {
   const groups = groupPersonasByProfile(personas, profiles)
-  const itemClass = 'flex items-start gap-3 rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md'
+  const boxClass = 'gap-3 rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md'
+  const itemClass = `flex items-start ${boxClass}`
   const itemStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
   return (
     <div className="space-y-6">
@@ -40,7 +45,31 @@ export function PersonaList({
           <ul className="career-stagger space-y-2.5">
             {group.personas.map((p) => (
               <li key={p.id}>
-                {onSelect ? (
+                {renderAction ? (
+                  // The card is a container; the link (or picking button) and the action are its two children.
+                  <div
+                    className={`flex flex-wrap items-center ${boxClass} ${onSelect && selectedId === p.id ? 'ring-2 ring-purple-400' : ''}`}
+                    style={itemStyle}
+                  >
+                    {onSelect ? (
+                      <button
+                        type="button"
+                        aria-pressed={selectedId === p.id}
+                        onClick={() => {
+                          onSelect(p)
+                        }}
+                        className="flex min-w-[14rem] flex-1 items-start gap-3 text-left"
+                      >
+                        <ItemBody persona={p} extra={renderExtra?.(p)} />
+                      </button>
+                    ) : (
+                      <AppLink href={hrefFor?.(p) ?? ''} className="flex min-w-[14rem] flex-1 items-start gap-3">
+                        <ItemBody persona={p} extra={renderExtra?.(p)} />
+                      </AppLink>
+                    )}
+                    <div className="shrink-0">{renderAction(p)}</div>
+                  </div>
+                ) : onSelect ? (
                   <button
                     type="button"
                     aria-pressed={selectedId === p.id}

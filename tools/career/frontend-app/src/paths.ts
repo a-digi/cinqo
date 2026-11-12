@@ -1,6 +1,10 @@
 // Every page path of the Career tool, shared by the route registration (main.tsx)
 // and the menu (menu.ts) so the two cannot drift apart.
 export const IMPORT_CV_PATH = '/tools/career/import-cv'
+// The Import CV page with a profile already chosen to import into (plan 261); without a profile it is the plain page.
+export function importCvPathFor(profileId?: string): string {
+  return profileId ? `${IMPORT_CV_PATH}?profileId=${encodeURIComponent(profileId)}` : IMPORT_CV_PATH
+}
 // One import run on its own page: a pattern route, the run's id arrives as the route parameter (plan 166).
 export const IMPORT_CV_RUN_PATH = '/tools/career/import-cv/:runId'
 // The address of one import run.

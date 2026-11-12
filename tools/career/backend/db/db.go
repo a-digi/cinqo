@@ -131,6 +131,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the CV import run driver: %w", err)
 	}
+	if err := migrateCVImportRunsTarget(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the CV import run target profile: %w", err)
+	}
 	if err := migrateCvDocumentPersonas(careerDB); err != nil {
 		careerDB.Close()
 		return fmt.Errorf("failed to link the CVs to their personas: %w", err)
@@ -653,7 +657,10 @@ CREATE TABLE IF NOT EXISTS cv_import_runs (
     -- driver (plan 209): who does the steps of this run's analysis. NULL: the AI, with tools (or a run from before the column).
     -- 'code': the page, in code, asking a model small questions (the AI never calls a tool); such a run cannot be picked up by
     -- another page, so it is not resumed.
-    driver            TEXT
+    driver            TEXT,
+    -- target_profile_id (plan 261): the profile the person chose to import this CV into; NULL: a new profile is made from the CV (and
+    -- every run from before the column). A plain id, not a foreign key: a profile deleted since is then still told apart from "none".
+    target_profile_id TEXT
 );
 `
 
@@ -1759,6 +1766,17 @@ func migrateCvAiRunsChoice(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE cv_ai_runs ADD COLUMN choice_json TEXT`)
+	return err
+}
+
+// migrateCVImportRunsTarget adds the nullable target_profile_id column (plan 261) to an already-installed cv_import_runs table; a no-op on a
+// brand-new install (the base schema has it) and on a database without the table. NULL is right for every existing run.
+func migrateCVImportRunsTarget(db *sql.DB) error {
+	exists, has, err := tableHasColumn(db, "cv_import_runs", "target_profile_id")
+	if err != nil || !exists || has {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE cv_import_runs ADD COLUMN target_profile_id TEXT`)
 	return err
 }
 

@@ -4,11 +4,14 @@ export function AppLink({
   href,
   className,
   style,
+  'aria-label': ariaLabel,
   children,
 }: {
   href: string
   className?: string
   style?: React.CSSProperties
+  // A name for the link when its text alone does not say enough (several links read the same).
+  'aria-label'?: string
   children: React.ReactNode
 }) {
   return (
@@ -21,6 +24,7 @@ export function AppLink({
       }}
       className={className}
       style={style}
+      aria-label={ariaLabel}
     >
       {children}
     </a>

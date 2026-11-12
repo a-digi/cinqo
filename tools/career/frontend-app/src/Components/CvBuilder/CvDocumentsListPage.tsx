@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { fetchAllCvDocuments, fetchPersonas, fetchProfiles, type CvDocument, type Persona, type Profile } from '../../api'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { useDismissedCvRuns } from '../../CvAi/useDismissedCvRuns'
 import { PDFIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
@@ -11,6 +13,7 @@ import { previewItems } from '../Persona/personaListRules'
 import { cvListMayBeCut } from '../ProfilesPage/profileViewRules'
 import { cvCountOfProfile, cvCountText, cvsOfPersona } from './cvPersonaRules'
 import { AllCvsList } from './AllCvsList'
+import { PersonaCvAiButton } from './PersonaCvAiButton'
 import { useCvDeletion } from './useCvDeletion'
 
 // How many of a persona's CV titles the list shows before "+N more".
@@ -40,6 +43,16 @@ export function CvDocumentsListPage() {
     },
     onError: setDeleteError,
   })
+
+  // Create CV with AI on each persona (plan 260): the AI in use and the dismissed failures are shared by every row; a run that ends
+  // makes the list read the CVs again (a failed read keeps what is shown).
+  const ai = useAiChoice()
+  const [dismissedRuns, dismissRun] = useDismissedCvRuns()
+  const reloadDocs = useCallback(() => {
+    fetchAllCvDocuments()
+      .then(setDocs)
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     Promise.all([fetchPersonas(), fetchProfiles()])
@@ -107,6 +120,9 @@ export function CvDocumentsListPage() {
                 personas={personas}
                 profiles={profiles}
                 hrefFor={(p) => cvDocumentsPathFor(p.id)}
+                renderAction={(p) => (
+                  <PersonaCvAiButton persona={p} ai={ai} dismissed={dismissedRuns} onDismiss={dismissRun} onRunEnded={reloadDocs} />
+                )}
                 renderGroupExtra={(group) => {
                   if (docsFailed) return null
                   if (docs === null) return <CountPill text="" />

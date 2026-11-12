@@ -22,6 +22,8 @@ export function CreateCvWithAi({
   personaId,
   personaName,
   onStart,
+  compact = false,
+  busy = false,
 }: {
   // Empty when the button can be used.
   disabledReason: string
@@ -31,6 +33,10 @@ export function CreateCvWithAi({
   personaId: string
   personaName: string
   onStart: (focus: string, choice: AiChoice) => Promise<void>
+  // Plan 260: the small look for a list row (a rounded pill that names the target role for a screen reader), and `busy` = the AI is already
+  // creating a CV for it: the button then says so with a spinner (it stays disabled through disabledReason).
+  compact?: boolean
+  busy?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [focus, setFocus] = useState('')
@@ -101,13 +107,26 @@ export function CreateCvWithAi({
         type="button"
         disabled={disabledReason !== ''}
         title={disabledReason || 'Let the AI choose a design and create a CV from this target role'}
+        aria-label={compact ? `${busy ? 'The AI is creating a CV for' : 'Create CV with AI for'} ${personaName}` : undefined}
         onClick={() => {
           setOpen(true)
         }}
-        className="flex shrink-0 items-center gap-1.5 rounded-md border border-purple-200 bg-white px-3.5 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className={
+          compact
+            ? 'flex shrink-0 items-center gap-1.5 rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-purple-50 hover:shadow disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none'
+            : 'flex shrink-0 items-center gap-1.5 rounded-md border border-purple-200 bg-white px-3.5 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50'
+        }
       >
-        <SparkleIcon />
-        Create CV with AI
+        {busy ? (
+          <span
+            data-testid="cv-ai-busy"
+            aria-hidden="true"
+            className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700 motion-reduce:animate-none"
+          />
+        ) : (
+          <SparkleIcon />
+        )}
+        {busy ? 'AI is creating a CV…' : 'Create CV with AI'}
       </button>
 
       <Modal open={open} title="Create a CV with AI" onClose={close}>

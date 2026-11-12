@@ -9,7 +9,7 @@ import { useImportStart } from './useImportStart'
 // like on the upload page). It is the upload page's own start (useImportStart, ImportStartPanel), so the analysis, the checks and the move to the new
 // run's own address are the same. Mounted only when the person asked for it, so nothing is read before.
 export function RestartPanel({ run, onClose }: { run: CVImportRun; onClose: () => void }) {
-  const start = useImportStart({ onRunsChanged: () => undefined })
+  const start = useImportStart({ onRunsChanged: () => undefined, targetProfileId: run.targetProfileId ?? '' })
   const [stored, setStored] = useState<'checking' | 'available' | 'gone'>('checking')
   const [sameError, setSameError] = useState('')
   const top = useRef<HTMLDivElement>(null)

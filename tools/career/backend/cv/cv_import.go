@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"career-tool-backend/db"
 )
@@ -180,6 +181,8 @@ type createCVImportRunRequest struct {
 	AIProposal       json.RawMessage `json:"aiProposal"`
 	// Driver is optional: "code" for a run the page does itself (plan 209).
 	Driver string `json:"driver"`
+	// TargetProfileID is optional (plan 261): the profile the person chose to import this CV into; empty means a new profile is made from the CV.
+	TargetProfileID string `json:"targetProfileId"`
 }
 
 type updateCVImportRunRequest struct {
@@ -237,14 +240,27 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `driver must be empty or "code"`, http.StatusBadRequest)
 			return
 		}
+		// A chosen profile has to exist (plan 261): a run is never recorded against an id that is not a profile.
+		target := strings.TrimSpace(body.TargetProfileID)
+		if target != "" {
+			ok, err := profileExists(target)
+			if err != nil {
+				http.Error(w, "failed to check the profile: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				http.Error(w, "that profile does not exist", http.StatusBadRequest)
+				return
+			}
+		}
 		// Without a proposal the run starts generating and the AI hands its proposal over with suggest_cv_import (step 155);
 		// with one it is recorded as a completed analysis, as before.
 		var id string
 		var err error
 		if noRawJSON(body.AIProposal) {
-			id, err = createGeneratingCVImportRunBy(body.FileID, body.OriginalFilename, body.ConversationID, body.Driver)
+			id, err = createGeneratingCVImportRunFor(body.FileID, body.OriginalFilename, body.ConversationID, body.Driver, target)
 		} else {
-			id, err = createCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal)
+			id, err = createCVImportRunFor(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal, target)
 		}
 		if err != nil {
 			http.Error(w, "failed to record cv import run: "+err.Error(), http.StatusInternalServerError)

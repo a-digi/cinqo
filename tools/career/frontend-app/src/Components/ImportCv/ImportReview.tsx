@@ -3,10 +3,13 @@
 // server: the proposal is the run's, and every insert writes the full save summary back onto the same run, so the review can be
 // left and resumed on the run's own URL until something was saved.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchCVImportRun, SuggestionsChangedError, updateCVImportRunSaveSummary, type CVImportRun } from '../../api'
+import { fetchCVImportRun, fetchProfiles, SuggestionsChangedError, updateCVImportRunSaveSummary, type CVImportRun } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { IMPORT_CV_PATH } from '../../paths'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
+import { accentFor, initialOf } from '../JobsPage/jobsTheme'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { targetPersonaOptions } from './importTargetRules'
 import { insertSelected } from './insertProposal'
 import { ImportPipeline } from './ImportPipeline'
 import { parseProposal, type CVImportProposal, type ProposalItem } from './parseProposal'
@@ -45,6 +48,32 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     revision: run.revision,
   }))
   const proposal = shown.proposal
+  // The profile the person chose to import into (plan 261); '' when the CV makes a new profile. With one, the profile row is not part of the review: the
+  // rest goes into that profile, and the proposed profile is never created. `profileState` is what is known of it: being checked, read (its name), gone
+  // (deleted since the import was started: Insert is blocked, there is no silent fallback to another profile) or unknown (the profiles could not be read:
+  // the insert is still safe, the server refuses a profile that is not there).
+  const targetId = run.targetProfileId ?? ''
+  const [profileState, setProfileState] = useState<{ status: 'checking' | 'ready' | 'gone' | 'unknown'; name: string }>({
+    status: 'checking',
+    name: '',
+  })
+  useEffect(() => {
+    if (targetId === '') return
+    let cancelled = false
+    fetchProfiles()
+      .then((list) => {
+        if (cancelled) return
+        const found = list.find((p) => p.id === targetId)
+        setProfileState(found ? { status: 'ready', name: profileLabel(found) } : { status: 'gone', name: '' })
+      })
+      .catch(() => {
+        if (!cancelled) setProfileState({ status: 'unknown', name: '' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [targetId])
+  const targetBlocked = targetId !== '' && (profileState.status === 'gone' || profileState.status === 'checking')
   // What the AI changed since the person last looked: one line, and a tag on the rows (by key).
   const [changeNote, setChangeNote] = useState('')
   const [badges, setBadges] = useState<Record<string, 'new' | 'changed'>>({})
@@ -137,13 +166,15 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         // Pre-fill the existing-persona picker when the persona row starts unchecked and the AI named a real, still existing one.
         if (!buildInitialChecked(proposal).persona && proposal.persona.possibleDuplicateOf) {
           const guess = proposal.persona.possibleDuplicateOf
-          if (labels.personaList.some((p) => p.id === guess)) setExistingPersonaId(guess)
+          if (targetPersonaOptions(labels.personaList, targetId).some((p) => p.id === guess)) setExistingPersonaId(guess)
         }
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
+    // the target of a run does not change while its page is open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposal])
 
   if (!proposal) {
@@ -153,6 +184,9 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       </section>
     )
   }
+
+  // With a chosen profile the profile row is never ticked: nothing of the proposed profile is created.
+  const checkedNow = targetId !== '' ? { ...checked, profile: false } : checked
 
   function toggle(key: string) {
     setChecked((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -172,7 +206,8 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     setInsertValidationError('')
 
     // insertSelected works by position (`skill-3`); the review keeps its state by the row's key (its id): the two are translated here and back.
-    const wanted = (key: string) => (checked[key] ?? false) && !insertedKeys[key]
+    if (targetBlocked) return
+    const wanted = (key: string) => (checkedNow[key] ?? false) && !insertedKeys[key]
     const effectiveChecked: Record<string, boolean> = {
       profile: wanted('profile'),
       persona: wanted('persona'),
@@ -198,7 +233,8 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     try {
       const { profileId, personaId, ...result } = await insertSelected(proposal, effectiveChecked, {
         existingPersonaId,
-        resolvedProfileId,
+        // the chosen profile stands in for "resolved": no profile is created and the first profile is never the fallback
+        resolvedProfileId: resolvedProfileId ?? (targetId !== '' ? targetId : null),
         resolvedPersonaId,
       })
       setResolvedProfileId(profileId)
@@ -278,7 +314,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   }
 
   // plan/ai/tools/career/step-167: the Insert button is there while something ticked is still to insert, gone once it is all saved.
-  const insert = insertState(checked, insertedKeys, insertErrors, inserting)
+  const insert = insertState(checkedNow, insertedKeys, insertErrors, inserting)
   const stages = pipelineStages({
     state: 'review',
     uploadError: false,
@@ -311,23 +347,59 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </div>
       )}
       <div className="career-stagger space-y-4">
-        <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
-          <ProposalRow
-            item={proposal.profile}
-            label={proposal.profile.name || '(no name proposed)'}
-            checked={checked.profile}
-            onToggle={() => {
-              toggle('profile')
-            }}
-            done={insertedKeys.profile}
-            errorMessage={insertErrors.profile}
-            badge={badges.profile}
-          />
-          {!checked.profile && !insertedKeys.profile && (
-            <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
-          )}
-        </section>
+        {targetId !== '' ? (
+          <section className={cardClassName} style={cardStyle} aria-label="Profile">
+            <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
+            {profileState.status === 'gone' ? (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p className="font-medium">The profile you chose no longer exists.</p>
+                <p className="mt-0.5">
+                  Nothing can be inserted. Start the import again and choose another profile, or let it make a new one.
+                </p>
+                <button
+                  type="button"
+                  onClick={onStartOver}
+                  className="mt-2 rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                >
+                  Start over
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                  style={{ background: accentFor(profileState.name || targetId).to }}
+                >
+                  {profileState.name ? initialOf(profileState.name) : '…'}
+                </span>
+                <p className="text-sm text-gray-700">
+                  This CV is imported into{' '}
+                  <span className="font-semibold text-gray-900">{profileState.name || 'the profile you chose'}</span>.
+                  <span className="mt-0.5 block text-xs text-gray-400">The profile the AI proposed from the CV is not used.</span>
+                </p>
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className={cardClassName} style={cardStyle}>
+            <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
+            <ProposalRow
+              item={proposal.profile}
+              label={proposal.profile.name || '(no name proposed)'}
+              checked={checked.profile}
+              onToggle={() => {
+                toggle('profile')
+              }}
+              done={insertedKeys.profile}
+              errorMessage={insertErrors.profile}
+              badge={badges.profile}
+            />
+            {!checked.profile && !insertedKeys.profile && (
+              <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
+            )}
+          </section>
+        )}
 
         <section className={cardClassName} style={cardStyle}>
           <h2 className="mb-2 text-base font-semibold text-gray-900">Target roles</h2>
@@ -346,7 +418,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           {!checked.persona && !insertedKeys.persona && (
             <div className="mt-2">
               <Dropdown
-                options={duplicateLabels?.personaList.map((p) => ({ value: p.id, label: p.name })) ?? []}
+                options={targetPersonaOptions(duplicateLabels?.personaList ?? [], targetId).map((p) => ({ value: p.id, label: p.name }))}
                 value={existingPersonaId}
                 onChange={setExistingPersonaId}
                 placeholder="Select an existing target role…"
@@ -354,6 +426,9 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
               <p className="mt-1 text-xs text-gray-400">
                 Personal Details, Skills, and Experience below will attach to this target role instead of a new one.
               </p>
+              {targetId !== '' && duplicateLabels !== null && targetPersonaOptions(duplicateLabels.personaList, targetId).length === 0 && (
+                <p className="mt-1 text-xs text-amber-700">This profile has no target roles yet: tick the proposed one above.</p>
+              )}
             </div>
           )}
         </section>
@@ -474,7 +549,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                 onClick={() => {
                   void handleInsert()
                 }}
-                disabled={inserting || insert.view === 'disabled'}
+                disabled={inserting || insert.view === 'disabled' || targetBlocked}
                 className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {inserting ? 'Inserting…' : insert.failedCount > 0 ? 'Insert again' : 'Insert'}

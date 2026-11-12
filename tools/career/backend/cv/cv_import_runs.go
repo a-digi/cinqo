@@ -73,6 +73,8 @@ type cvImportRun struct {
 	Error  string `json:"error,omitempty"`
 	// Driver is "code" for a run whose steps the page does itself (plan 209), empty for one the AI does with tools.
 	Driver string `json:"driver,omitempty"`
+	// TargetProfileID is the profile the person chose to import into (plan 261); empty: a new profile is made from the CV. It may name a profile deleted since.
+	TargetProfileID string `json:"targetProfileId,omitempty"`
 	// Progress is what a generating run has stored so far (its draft), for the page that shows the run working; nil when nothing was stored.
 	Progress *runProgress `json:"progress,omitempty"`
 }
@@ -81,11 +83,24 @@ type cvImportRun struct {
 // the frontend successfully parses the AI's reply, before entering its
 // own 'review' state.
 func createCVImportRun(mediaFileID, originalFilename, conversationID string, aiProposal []byte) (string, error) {
+	return createCVImportRunFor(mediaFileID, originalFilename, conversationID, aiProposal, "")
+}
+
+// nullable is the value for an optional text column: NULL for "".
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// createCVImportRunFor is createCVImportRun for a run that imports into a chosen profile ("" for none; the caller has checked it exists).
+func createCVImportRunFor(mediaFileID, originalFilename, conversationID string, aiProposal []byte, targetProfileID string) (string, error) {
 	id := uuid.NewString()
 	_, err := db.CareerDB.Exec(
-		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json, status, created_at)
-		VALUES (?, ?, ?, ?, ?, 'ready', datetime('now'))`,
-		id, mediaFileID, originalFilename, conversationID, string(aiProposal),
+		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json, status, target_profile_id, created_at)
+		VALUES (?, ?, ?, ?, ?, 'ready', ?, datetime('now'))`,
+		id, mediaFileID, originalFilename, conversationID, string(aiProposal), nullable(targetProfileID),
 	)
 	if err != nil {
 		return "", err
@@ -101,20 +116,34 @@ func createGeneratingCVImportRun(mediaFileID, originalFilename, conversationID s
 
 // createGeneratingCVImportRunBy is createGeneratingCVImportRun for a run with a driver ("code", or "" for the AI with tools).
 func createGeneratingCVImportRunBy(mediaFileID, originalFilename, conversationID, driver string) (string, error) {
+	return createGeneratingCVImportRunFor(mediaFileID, originalFilename, conversationID, driver, "")
+}
+
+// createGeneratingCVImportRunFor is createGeneratingCVImportRunBy for a run that imports into a chosen profile ("" for none; the caller has checked it exists).
+func createGeneratingCVImportRunFor(mediaFileID, originalFilename, conversationID, driver, targetProfileID string) (string, error) {
 	id := uuid.NewString()
-	var drv any
-	if driver != "" {
-		drv = driver
-	}
 	_, err := db.CareerDB.Exec(
-		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json, status, driver, created_at)
-		VALUES (?, ?, ?, ?, ?, 'generating', ?, datetime('now'))`,
-		id, mediaFileID, originalFilename, conversationID, noProposalJSON, drv,
+		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json, status, driver, target_profile_id, created_at)
+		VALUES (?, ?, ?, ?, ?, 'generating', ?, ?, datetime('now'))`,
+		id, mediaFileID, originalFilename, conversationID, noProposalJSON, nullable(driver), nullable(targetProfileID),
 	)
 	if err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+// profileExists says whether a profile with this id is in the database.
+func profileExists(id string) (bool, error) {
+	var one int
+	err := db.CareerDB.QueryRow(`SELECT 1 FROM profiles WHERE id = ?`, id).Scan(&one)
+	switch {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	return true, nil
 }
 
 // storeCVImportProposal keeps the proposal the AI handed over on a generating run (a second call while the run is generating
@@ -283,7 +312,7 @@ func listCVImportRuns() ([]cvImportRun, error) { return queryCVImportRuns("") }
 // queryCVImportRuns reads runs, newest first; where is "" or a "WHERE …" with its arguments.
 func queryCVImportRuns(where string, args ...any) ([]cvImportRun, error) {
 	rows, err := db.CareerDB.Query(
-		`SELECT id, media_file_id, original_filename, conversation_id, ai_proposal_json, save_summary_json, created_at, updated_at, status, error, driver, draft_json
+		`SELECT id, media_file_id, original_filename, conversation_id, ai_proposal_json, save_summary_json, created_at, updated_at, status, error, driver, draft_json, target_profile_id
 		FROM cv_import_runs `+where+` ORDER BY created_at DESC`, args...,
 	)
 	if err != nil {
@@ -295,8 +324,8 @@ func queryCVImportRuns(where string, args ...any) ([]cvImportRun, error) {
 	for rows.Next() {
 		var r cvImportRun
 		var aiProposal string
-		var saveSummary, updatedAt, errText, driver, draft sql.NullString
-		if err := rows.Scan(&r.ID, &r.MediaFileID, &r.OriginalFilename, &r.ConversationID, &aiProposal, &saveSummary, &r.CreatedAt, &updatedAt, &r.Status, &errText, &driver, &draft); err != nil {
+		var saveSummary, updatedAt, errText, driver, draft, target sql.NullString
+		if err := rows.Scan(&r.ID, &r.MediaFileID, &r.OriginalFilename, &r.ConversationID, &aiProposal, &saveSummary, &r.CreatedAt, &updatedAt, &r.Status, &errText, &driver, &draft, &target); err != nil {
 			return nil, err
 		}
 		r.AIProposal = json.RawMessage(aiProposal)
@@ -309,6 +338,7 @@ func queryCVImportRuns(where string, args ...any) ([]cvImportRun, error) {
 		r.UpdatedAt = updatedAt.String
 		r.Error = errText.String
 		r.Driver = driver.String
+		r.TargetProfileID = target.String
 		if r.Status == runGenerating && draft.Valid {
 			r.Progress = progressOf(draft.String)
 		}
