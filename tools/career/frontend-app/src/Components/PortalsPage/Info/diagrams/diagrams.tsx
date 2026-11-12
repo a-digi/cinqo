@@ -10,29 +10,17 @@ import {
 } from '../../../../Shared/Icons/icons'
 import { ACCENTS, gradient, type Accent } from '../../../JobsPage/jobsTheme'
 import { CRAWL_STEPS, ENGINE_CARDS, HERO_NODES, LINK_PARTS, TROUBLE, FIRST_STEPS, type ChapterId } from '../platformInfoData'
-import type { JourneyStep } from '../platformInfoRules'
-import { Reveal } from '../Reveal'
-import { useSeen } from '../useSeen'
+import type { JourneyStep } from '../../../../Shared/Infographic/infographicTypes'
+import { FirstStepsPath as SharedFirstStepsPath } from '../../../../Shared/Infographic/FirstStepsPath'
+import { FlowRow, type FlowNode } from '../../../../Shared/Infographic/FlowRow'
+import { Reveal } from '../../../../Shared/Infographic/Reveal'
+import { Arrow } from '../../../../Shared/Infographic/Arrow'
 
 // The pictures of the infographic (plan 262). Boxes and text are real HTML (so they are read aloud and scale with the text size); only the arrows and
 // the little shapes are SVG, and those are hidden from assistive technology. Colours come from the tool's palette.
 
-// An arrow made of HTML and CSS (a line and a head): it grows once when its chapter has come into view. `down` points down (used where a row wraps).
-export function Arrow({ accent, down = false, className = '' }: { accent: Accent; down?: boolean; className?: string }) {
-  // It starts growing when it itself comes into view (it may sit outside any revealed block).
-  const [ref, seen] = useSeen<HTMLSpanElement>()
-  return (
-    <span
-      ref={ref}
-      aria-hidden="true"
-      className={`career-info-arrow shrink-0 ${seen ? 'is-in' : ''} ${down ? 'is-down' : ''} ${className}`}
-      style={{ color: accent.to }}
-    >
-      <i className="career-info-arrow-line" />
-      <i className="career-info-arrow-head" />
-    </span>
-  )
-}
+// The arrow lives in the shared infographic parts; the platform pictures use it from here too.
+export { Arrow }
 
 const HERO_ICONS: Record<string, React.ReactNode> = {
   platform: <GlobeIcon className="h-6 w-6" />,
@@ -46,62 +34,14 @@ const HERO_ACCENTS: Accent[] = [ACCENTS[0], ACCENTS[6], ACCENTS[5], ACCENTS[1], 
 
 // The big picture: five nodes joined by arrows. A node that has a chapter of its own is a button that scrolls to it.
 export function HeroFlow({ onGo }: { onGo: (chapter: ChapterId) => void }) {
+  const nodes: FlowNode[] = HERO_NODES.map((n, i) => ({ ...n, icon: HERO_ICONS[n.id], accent: HERO_ACCENTS[i] }))
   return (
-    <ol className="flex flex-col items-stretch md:flex-row md:items-center" aria-label="The flow">
-      {HERO_NODES.map((n, i) => {
-        const accent = HERO_ACCENTS[i]
-        const chapter = n.chapter
-        const body = (
-          <>
-            <span
-              className="flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-sm"
-              style={{ background: gradient(accent) }}
-            >
-              {HERO_ICONS[n.id]}
-            </span>
-            <span className="mt-2 block text-sm font-semibold text-gray-900">{n.label}</span>
-            <span className="block text-xs text-gray-500">{n.words}</span>
-          </>
-        )
-        const box = 'flex h-full w-full flex-col items-center rounded-2xl border p-3 text-center'
-        return (
-          <li key={n.id} className="contents">
-            <div className="min-w-0 flex-1 md:basis-0">
-              <Reveal delay={i} className="h-full">
-                {chapter !== null ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onGo(chapter)
-                    }}
-                    className={`${box} transition-transform hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0`}
-                    style={{ borderColor: accent.soft, background: accent.soft }}
-                    aria-label={`${n.label}: ${n.words}. Go to the chapter`}
-                  >
-                    {body}
-                  </button>
-                ) : (
-                  <div className={box} style={{ borderColor: accent.soft, background: accent.soft }}>
-                    {body}
-                  </div>
-                )}
-              </Reveal>
-            </div>
-            {i < HERO_NODES.length - 1 && (
-              <div aria-hidden="true" className="flex justify-center py-1 md:px-1 md:py-0">
-                {/* The hiding is done by these wrappers: the arrow's own display rule (career-info-arrow) would win over a hide class put on it. */}
-                <span className="md:hidden">
-                  <Arrow accent={accent} down />
-                </span>
-                <span className="hidden md:inline-flex">
-                  <Arrow accent={accent} />
-                </span>
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ol>
+    <FlowRow
+      nodes={nodes}
+      onGo={(c) => {
+        onGo(c as ChapterId)
+      }}
+    />
   )
 }
 
@@ -295,58 +235,7 @@ export function FirstStepsPath({
   progress: { done: number; total: number }
   nextId: string | null
 }) {
-  const accent = ACCENTS[1]
-  return (
-    <div className="mx-auto w-full max-w-3xl">
-      <p role="status" className="mb-3 text-center text-sm text-gray-600">
-        {progress.done === progress.total ? (
-          <span className="font-semibold text-green-700">Every step you can see on this page is done.</span>
-        ) : (
-          <>
-            <span className="font-semibold text-gray-900">
-              {progress.done} of {progress.total}
-            </span>{' '}
-            steps you can see on this page are done.
-          </>
-        )}
-      </p>
-      <ol className="space-y-2.5">
-        {FIRST_STEPS.map((s, i) => {
-          const state = steps.find((x) => x.id === s.id)
-          const done = state?.done === true
-          const next = nextId === s.id
-          return (
-            <Reveal as="li" key={s.id} delay={i}>
-              <div
-                className="flex items-start gap-3 rounded-2xl border bg-white p-3 shadow-sm"
-                style={{ borderColor: done ? accent.from : next ? ACCENTS[2].from : '#e5e7eb', background: done ? accent.soft : undefined }}
-                data-state={done ? 'done' : next ? 'next' : 'open'}
-              >
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-                  style={{ background: done ? gradient(accent) : next ? gradient(ACCENTS[2]) : '#9ca3af' }}
-                  aria-hidden="true"
-                >
-                  {done ? '✓' : i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-gray-900">{s.title}</span>
-                    {done && <span className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">Done</span>}
-                    {next && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">Next</span>}
-                  </div>
-                  <p className="text-xs text-gray-600">{s.text}</p>
-                </div>
-                <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700">
-                  {s.click}
-                </span>
-              </div>
-            </Reveal>
-          )
-        })}
-      </ol>
-    </div>
-  )
+  return <SharedFirstStepsPath specs={FIRST_STEPS} steps={steps} progress={progress} nextId={nextId} />
 }
 
 const PILL_STYLE: Record<string, string> = {

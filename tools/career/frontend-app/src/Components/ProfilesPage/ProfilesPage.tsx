@@ -28,6 +28,11 @@ import { summarizeProfiles } from './profileStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { OptimizeWithAi } from '../../Optimize/OptimizeWithAi'
+import { HEADER_BUTTON } from './Info/profileInfoData'
+import { infoEntryFor, journeyFactsOf } from './Info/profileInfoRules'
+import { ProfileInfoCard } from './Info/ProfileInfoCard'
+import { ProfileInfoModal } from './Info/ProfileInfoModal'
+import { ProfileInfoTeaser } from './Info/ProfileInfoTeaser'
 
 // The job seeker layer, one level above Persona (step 10) — the
 // natural new entry point now that nothing else (Personas, and
@@ -41,6 +46,10 @@ export function ProfilesPage() {
   // "Optimize with AI" on every profile card (plan 258, step 8): the AI to start from is read once for the whole list.
   const ai = useAiChoice()
   const [profiles, setProfiles] = useState<Profile[]>([])
+  // True once the list was read (plan 266): the short "what are profiles for" part is shown only then, so it never flashes for a person who has profiles.
+  const [loaded, setLoaded] = useState(false)
+  // The "How profiles work" infographic.
+  const [infoOpen, setInfoOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
@@ -54,7 +63,10 @@ export function ProfilesPage() {
   function load() {
     setError('')
     fetchProfiles()
-      .then(setProfiles)
+      .then((list) => {
+        setProfiles(list)
+        setLoaded(true)
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -142,6 +154,7 @@ export function ProfilesPage() {
       })
   }
 
+  const infoEntry = infoEntryFor(loaded, profiles.length)
   const summary = summarizeProfiles(profiles)
   const platforms = platformCounts(profiles)
 
@@ -197,6 +210,18 @@ export function ProfilesPage() {
                   <UploadIcon className="h-4 w-4" />
                   Import CV
                 </AppLink>
+                {infoEntry === 'button' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInfoOpen(true)
+                    }}
+                    className="shrink-0 rounded-md border px-3.5 py-2 text-sm font-medium hover:bg-blue-50"
+                    style={{ borderColor: PAGE_ACCENT.from, color: PAGE_ACCENT.text }}
+                  >
+                    {HEADER_BUTTON}
+                  </button>
+                )}
                 <p className="min-w-0 flex-1 text-xs text-gray-500">
                   Deleting a profile permanently deletes its target roles and everything they own (details, skills, experience), with no
                   further confirmation.
@@ -205,15 +230,16 @@ export function ProfilesPage() {
 
               <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-              {profiles.length === 0 && !error && (
-                <div
-                  className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
-                  style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
-                >
-                  No profiles yet. Create the first one with “New profile”.{' '}
-                  <AppLink href={GUIDE_PATH} className="font-medium text-blue-700 hover:underline">
-                    Getting started →
-                  </AppLink>
+              {infoEntry === 'teaser' && !error && (
+                <div className="mb-4">
+                  <ProfileInfoTeaser
+                    onOpen={() => {
+                      setInfoOpen(true)
+                    }}
+                    onNew={() => {
+                      window.__cinqoToolBridge.navigate(NEW_PROFILE_PATH)
+                    }}
+                  />
                 </div>
               )}
 
@@ -451,9 +477,22 @@ export function ProfilesPage() {
           </div>
         </div>
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <ProfileInfoCard
+            onOpen={() => {
+              setInfoOpen(true)
+            }}
+          />
           <PageTips page="profiles" orientation="vertical" />
         </aside>
       </div>
+
+      <ProfileInfoModal
+        open={infoOpen}
+        onClose={() => {
+          setInfoOpen(false)
+        }}
+        facts={journeyFactsOf(profiles)}
+      />
     </div>
   )
 }

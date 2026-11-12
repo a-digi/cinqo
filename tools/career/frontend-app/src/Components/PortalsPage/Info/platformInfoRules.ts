@@ -1,6 +1,12 @@
 // Pure rules of the "How platforms work" infographic (plan 262): the order of its chapters, where the person is on the way to a first crawl,
 // and the one decision about what the Platforms page shows (the short teaser, or the button and the card). No React, so they can be script-checked.
+import { chapterInView, infoEntryFor, nextStepOf, progressOf, type InfoEntry } from '../../../Shared/Infographic/infographicRules'
+import type { JourneyStep } from '../../../Shared/Infographic/infographicTypes'
 import { CHAPTERS, FIRST_STEPS, type Chapter, type ChapterId, type JourneyKey } from './platformInfoData'
+
+// The rules every infographic shares live in Shared/Infographic; they are named here too, as the platform code and its tests always used them.
+export { chapterInView, infoEntryFor }
+export type { InfoEntry, JourneyStep }
 
 // What the Platforms page already knows (summarizePortals): no extra request.
 export interface JourneyFacts {
@@ -10,12 +16,6 @@ export interface JourneyFacts {
   withInstructions: number
   // Links that never saved a job.
   neverCrawled: number
-}
-
-export interface JourneyStep {
-  id: string
-  // null: the page cannot tell (choosing the AI, looking at the jobs); drawn without a done mark.
-  done: boolean | null
 }
 
 // Whether each step of "Your first platform" is behind the person. A step counts as done when the thing it makes exists: a platform, a link,
@@ -32,23 +32,12 @@ export function journeyState(facts: JourneyFacts): JourneyStep[] {
 
 // The first step the person has still to do (one the page can tell about), or null when every one it can tell about is done.
 export function nextJourneyStep(facts: JourneyFacts): string | null {
-  const step = journeyState(facts).find((s) => s.done === false)
-  return step ? step.id : null
+  return nextStepOf(journeyState(facts))
 }
 
 // How many of the steps the page can tell about are done, and how many that is in all (for "3 of 4 done").
 export function journeyProgress(facts: JourneyFacts): { done: number; total: number } {
-  const known = journeyState(facts).filter((s) => s.done !== null)
-  return { done: known.filter((s) => s.done).length, total: known.length }
-}
-
-// What the page shows about the infographic. `loaded` is false until the list of platforms was read: nothing is shown before, so the teaser
-// never flashes for a person who has platforms.
-export type InfoEntry = 'none' | 'teaser' | 'button'
-
-export function infoEntryFor(loaded: boolean, platformCount: number): InfoEntry {
-  if (!loaded) return 'none'
-  return platformCount === 0 ? 'teaser' : 'button'
+  return progressOf(journeyState(facts))
 }
 
 // The chapters in poster order, and the position of one (the chapter bar marks the one in view).
@@ -60,13 +49,4 @@ export function chapterById(id: ChapterId): Chapter {
   const c = CHAPTERS.find((x) => x.id === id)
   if (!c) throw new Error(`unknown chapter ${id}`)
   return c
-}
-
-// The chapter in view: the last one whose top is at or above `line` (a y position), given the tops in poster order; the first when none is.
-export function chapterInView(tops: number[], line: number): number {
-  let current = 0
-  for (let i = 0; i < tops.length; i++) {
-    if (tops[i] <= line) current = i
-  }
-  return current
 }

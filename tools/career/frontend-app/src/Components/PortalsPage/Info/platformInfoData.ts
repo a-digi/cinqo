@@ -3,34 +3,15 @@
 // the page: PortalsPage, LinkStatusPills, instructionStats, the Crawler folder; the rules of saving jobs: jobs.source_url is unique; deleting a
 // platform removes its links, a job only loses its link). No React and no layout here, so the rules and the words can be script-checked.
 import { CRAWL_MONITOR_PATH, CRAWLER_SETTINGS_PATH, JOBS_PATH, SETTINGS_PATH } from '../../../paths'
+import type { Caption, Chapter as SharedChapter, InfoLink } from '../../../Shared/Infographic/infographicTypes'
 
 export type ChapterId = 'overview' | 'platform' | 'links' | 'crawler' | 'instructions' | 'first-steps' | 'trouble'
 
 // A step of the journey the progress strip can tell about from what the page has loaded; null = the page cannot tell.
 export type JourneyKey = 'platform' | 'link' | 'instructions' | 'crawled'
 
-export interface Caption {
-  title: string
-  text: string
-}
-
-export interface InfoLink {
-  label: string
-  path: string
-}
-
-export interface Chapter {
-  id: ChapterId
-  // The short name on the chapter bar.
-  nav: string
-  title: string
-  // One sentence: what the chapter shows.
-  promise: string
-  captions: Caption[]
-  // The real buttons to click, exactly as they are named on the page.
-  click: string[]
-  links: InfoLink[]
-}
+export type { Caption, InfoLink }
+export type Chapter = SharedChapter<ChapterId>
 
 // The big picture at the top: five nodes of one flow. `chapter` is the chapter that zooms into the node (none for the last two).
 export interface HeroNode {
