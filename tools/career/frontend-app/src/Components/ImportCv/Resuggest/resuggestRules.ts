@@ -69,7 +69,7 @@ export function conversationTitle(scope: ResuggestScope, originalFilename: strin
 }
 
 // The wish of the person; an empty one asks the AI to look again and improve.
-export const DEFAULT_WISH = 'Look at this again against the CV and improve it.'
+export const DEFAULT_WISH = 'Look at this again against the CV and improve it: write it differently, with several concrete points.'
 export const MAX_WISH_LENGTH = 1000
 
 export function wishOf(raw: string): string {

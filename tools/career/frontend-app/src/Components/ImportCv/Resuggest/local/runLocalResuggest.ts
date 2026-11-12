@@ -10,6 +10,7 @@ import { cvText } from '../../codeImport/pieces'
 import { educationText } from '../../codeImport/pieces'
 import { jobDescription, splitCv, type CvJob, type SplitCv } from '../../splitCv'
 import { isListSection, type ResuggestScope, type ResuggestSection } from '../resuggestRules'
+import { detectLanguage, type LanguageCode } from '../../../../Optimize/language'
 import { FIELD_SPECS, clip, fieldsPiece, skillsDiffPiece, type FieldSpec } from './localPieces'
 
 // The most rows one local Re-suggest goes through: a small model is slow and each row is a question of its own.
@@ -93,6 +94,9 @@ export async function runLocalResuggest(scope: ResuggestScope, wish: string, ste
     // the suggestions are still there to work from
   }
   const ask = (prompt: string): Promise<string> => steps.ask(prompt)
+  // The language the suggestions are written in: the CV's (a German CV gets German suggestions), taken from the text of the part being re-suggested, else from the whole CV.
+  const wholeCv = cv ? cvText(cv) : ''
+  const languageOf = (...texts: string[]): LanguageCode | null => detectLanguage(texts.join('\n')) ?? detectLanguage(wholeCv)
   const ops: ChangeOp[] = []
   const left: string[] = []
   const section = scope.section
@@ -101,7 +105,8 @@ export async function runLocalResuggest(scope: ResuggestScope, wish: string, ste
     steps.progress('Looking at the suggestion…')
     const specs = FIELD_SPECS[section as 'profile' | 'persona' | 'personalDetails']
     const excerpt = section === 'profile' ? (cv?.header.join('\n') ?? '') : cv ? clip(cvText(cv), 3000) : ''
-    const o = await runPiece(fieldsPiece(specs, asText(singleOf(proposal, section), specs), excerpt, wish), ask)
+    const current = asText(singleOf(proposal, section), specs)
+    const o = await runPiece(fieldsPiece(specs, current, excerpt, wish, languageOf(...Object.values(current))), ask)
     if (o.value === null) left.push(`the suggestion (${o.note || 'no usable answer'})`)
     else if (Object.keys(o.value).length > 0) {
       ops.push({ op: 'update', section, fields: o.value })
@@ -114,6 +119,7 @@ export async function runLocalResuggest(scope: ResuggestScope, wish: string, ste
         rows.map((r) => r.row.value),
         cv ? skillsExcerpt(cv) : '',
         wish,
+        languageOf(...rows.map((r) => r.row.value)),
       ),
       ask,
     )
@@ -142,7 +148,8 @@ export async function runLocalResuggest(scope: ResuggestScope, wish: string, ste
           : section === 'education' && cv
             ? educationText(cv)
             : ''
-      const o = await runPiece(fieldsPiece(specs, asText(r.row, specs), excerpt, wish), ask)
+      const current = asText(r.row, specs)
+      const o = await runPiece(fieldsPiece(specs, current, excerpt, wish, languageOf(...Object.values(current))), ask)
       if (o.value === null) left.push(`${r.label} (${o.note || 'no usable answer'})`)
       else if (Object.keys(o.value).length > 0) {
         ops.push({ op: 'update', list: section, id: r.id, fields: o.value })
