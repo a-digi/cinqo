@@ -2,7 +2,8 @@ import { AppScopes } from '../security/scopes'
 import { localAiMenuEntry } from '../../Components/Admin/LocalAi/menuEntry'
 import { HOW_TO_CONTENT } from '../../Components/Admin/HowTo/HowToContent'
 import { HOW_TO_PAGE_IDS, howToPath } from '../../Components/Admin/HowTo/howToRules'
-import { howToIcons, installedToolsIcon, logsIcon, repositoriesIcon, scopesIcon } from './menuIcons'
+import { UNEXPECTED_STOPS_PATH } from '../routing/systemPaths'
+import { howToIcons, installedToolsIcon, logsIcon, repositoriesIcon, scopesIcon, unexpectedStopsIcon } from './menuIcons'
 
 export interface MenuEntry {
   label: string
@@ -77,7 +78,12 @@ export const menuEntries: MenuEntry[] = [
         scopes: [AppScopes.PlatformRead],
         icon: platformsIcon,
         // one landing page per slide of the How To page (plan 219); the labels are the pages' own
-        children: HOW_TO_PAGE_IDS.map((id) => ({ label: HOW_TO_CONTENT[id].label, path: howToPath(id), scopes: [AppScopes.PlatformRead], icon: howToIcons[id] })),
+        children: HOW_TO_PAGE_IDS.map((id) => ({
+          label: HOW_TO_CONTENT[id].label,
+          path: howToPath(id),
+          scopes: [AppScopes.PlatformRead],
+          icon: howToIcons[id],
+        })),
       },
     ],
   },
@@ -85,6 +91,7 @@ export const menuEntries: MenuEntry[] = [
     label: 'System',
     icon: systemIcon,
     children: [
+      { label: 'Unexpected stops', path: UNEXPECTED_STOPS_PATH, scopes: [AppScopes.SystemRead], icon: unexpectedStopsIcon },
       {
         label: 'Security',
         icon: securityIcon,

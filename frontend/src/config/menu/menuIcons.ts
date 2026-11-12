@@ -31,3 +31,6 @@ export const howToIcons: Record<HowToPageId, string> = {
   // Anthropic: a speech bubble with a spark in it.
   anthropic: `${OPEN}<path d="M4 4.5h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H8.5l-3 3v-3H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 6.6l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8.8-1.7z" stroke-width="1" stroke-linejoin="round"/></svg>`,
 }
+
+// Unexpected stops: a warning triangle.
+export const unexpectedStopsIcon = `${OPEN}<path d="M10 3.5l7 12.5H3L10 3.5z" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 8.5v3.2M10 13.9v.1" stroke-width="1.5" stroke-linecap="round"/></svg>`

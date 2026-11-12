@@ -1,14 +1,10 @@
-import type { SystemEvent, SystemResources } from '../api/system'
+import type { SystemEvent, SystemEventsSummary, SystemResources } from '../api/system'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
 import { agentView, deviceText } from './resourceLevel'
 
 // Pure rules for the details panel (plan 223, step 5): which stops are unseen, the words of the red chip, the time of a stop, and the rows of "right now".
 
 export const EVENTS_POLL_MS = 30_000
-
-export function unseenOf(events: SystemEvent[]): SystemEvent[] {
-  return events.filter((e) => !e.acknowledged)
-}
 
 // "14:02" for today, "9 Nov 14:02" for another day (local time, English words).
 export function whenText(iso: string, now: Date = new Date()): string {
@@ -20,14 +16,20 @@ export function whenText(iso: string, now: Date = new Date()): string {
 }
 
 // The red chip: the newest unseen stop and how many more are waiting; '' when nothing is unseen.
-export function chipText(unseen: SystemEvent[], now: Date = new Date()): string {
-  if (unseen.length === 0) return ''
-  const latest = unseen[0]
-  const more = unseen.length - 1
-  return `Stopped unexpectedly ${whenText(latest.at, now)}${more > 0 ? ` (+${more} earlier)` : ''}`
+export function chipText(summary: SystemEventsSummary, now: Date = new Date()): string {
+  if (summary.unseen === 0 || summary.latest === undefined) return ''
+  const more = summary.unseen - 1
+  return `Stopped unexpectedly ${whenText(summary.latest.at, now)}${more > 0 ? ` (+${String(more)} earlier)` : ''}`
 }
 
-export function eventTitle(e: SystemEvent): string {
+// The one line of the dropdown's "Unexpected stops" section (plan 259): how many there are and how many are new; the stops themselves are on their own page.
+export function stopsLine(summary: SystemEventsSummary): string {
+  if (summary.total === 0) return 'No unexpected stops recorded.'
+  const noun = summary.total === 1 ? 'unexpected stop' : 'unexpected stops'
+  return `${String(summary.total)} ${noun} recorded${summary.unseen > 0 ? `, ${String(summary.unseen)} new` : ''}`
+}
+
+export function eventTitle(e: Pick<SystemEvent, 'kind'>): string {
   return e.kind === 'local_ai_stopped' ? 'The local model stopped' : 'Cinqo stopped'
 }
 

@@ -3,7 +3,7 @@ import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
 import { SystemDetails } from './DetailsPanel'
 import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
-import { canManageSystem, canUnload, isUnloadable } from './agentUnload'
+import { canUnload, isUnloadable } from './agentUnload'
 import { AlertIcon, BotIcon, CheckIcon, PowerIcon, MemoryIcon } from './ResourceIcons'
 import { agentView, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
@@ -49,7 +49,7 @@ export function ResourceBar() {
   return (
     <Shell gauge={{ level, percent: usedPercent(real) }}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <SystemDetails resources={r} canManage={canManageSystem(scopes)} cinqoWatch={formatBytes(real.cinqo.appBytes)} />
+        <SystemDetails resources={r} cinqoWatch={formatBytes(real.cinqo.appBytes)} />
         <AgentChip
           tone={agent.tone}
           text={agent.text}

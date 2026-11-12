@@ -1,24 +1,25 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { acknowledgeSystemEvent, type SystemEvent, type SystemResources } from '../api/system'
+import { Link } from 'react-router-dom'
+import type { SystemResources } from '../api/system'
+import { UNEXPECTED_STOPS_PATH } from '../config/routing/systemPaths'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
-import { agentLine, chipText, deviceRows, eventTitle, liveRows, unseenOf, whenText } from './eventsRules'
+import { agentLine, chipText, deviceRows, liveRows, stopsLine } from './eventsRules'
 import { AlertIcon, LaptopIcon } from './ResourceIcons'
 import { useFlash } from './tween'
 import { useSystemEvents } from './useSystemEvents'
 
 // The details of the computer and of Cinqo's own record of unexpected stops (plan 223, step 5), in a panel under two buttons of the bar: "Details"
-// (always) and, while a stop has not been marked as seen, a red chip that says so. Both open the same panel. Marking a stop as seen needs the
-// manage scope; without it the panel only shows the record.
-export function SystemDetails({ resources, canManage, cinqoWatch }: { resources: SystemResources; canManage: boolean; cinqoWatch: string }) {
+// (always) and, while a stop has not been marked as seen, a red chip that says so. Both open the same panel. The panel only says how many stops there are and
+// how many are new, with a link to their own page (plan 259): the table, the facts of each stop and marking one as seen are there.
+export function SystemDetails({ resources, cinqoWatch }: { resources: SystemResources; cinqoWatch: string }) {
   const flash = useFlash(cinqoWatch) // Cinqo's own memory lights up when its real reading changes
-  const { events, refresh } = useSystemEvents()
-  const unseen = unseenOf(events)
+  const { summary } = useSystemEvents()
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const panelId = useId()
   const titleId = useId()
-  const chip = chipText(unseen)
+  const chip = chipText(summary)
 
   useEffect(() => {
     if (!open) return
@@ -95,7 +96,20 @@ export function SystemDetails({ resources, canManage, cinqoWatch }: { resources:
             <p className="text-xs text-slate-700">{agentLine(resources)}</p>
           </Section>
           <Section title="Unexpected stops">
-            <Stops events={events} canManage={canManage} onSeen={refresh} />
+            <p data-testid="stops-line" className="text-xs text-slate-700">
+              {stopsLine(summary)}
+            </p>
+            {summary.total > 0 && (
+              <Link
+                to={UNEXPECTED_STOPS_PATH}
+                onClick={() => {
+                  setOpen(false)
+                }}
+                className="mt-1.5 inline-block text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
+              >
+                Open the unexpected stops →
+              </Link>
+            )}
           </Section>
         </div>
       )}
@@ -122,93 +136,5 @@ function Facts({ rows }: { rows: { label: string; value: string }[] }) {
         </div>
       ))}
     </dl>
-  )
-}
-
-function Stops({ events, canManage, onSeen }: { events: SystemEvent[]; canManage: boolean; onSeen: () => void }) {
-  if (events.length === 0) return <p className="text-xs text-slate-500">No unexpected stops recorded.</p>
-  return (
-    <ul className="space-y-2">
-      {events.map((e) => (
-        <Stop key={e.id} event={e} canManage={canManage} onSeen={onSeen} />
-      ))}
-    </ul>
-  )
-}
-
-function Stop({ event, canManage, onSeen }: { event: SystemEvent; canManage: boolean; onSeen: () => void }) {
-  const [facts, setFacts] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const seen = event.acknowledged
-
-  const markSeen = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      await acknowledgeSystemEvent(event.id)
-      onSeen()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <li
-      className={`rounded-lg border px-3 py-2 text-xs ${seen ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-red-200 bg-red-50 text-slate-900'}`}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-semibold">
-          {eventTitle(event)} at {whenText(event.at)}
-        </span>
-        {seen ? (
-          <span className="shrink-0 text-[11px] text-slate-500">seen</span>
-        ) : (
-          <span className="shrink-0 text-[11px] font-semibold text-red-700">new</span>
-        )}
-      </div>
-      <p className="mt-1 leading-snug">{event.verdict}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        {event.evidence.length > 0 && (
-          <button
-            type="button"
-            aria-expanded={facts}
-            onClick={() => {
-              setFacts((v) => !v)
-            }}
-            className="font-medium text-slate-700 underline underline-offset-2 hover:no-underline"
-          >
-            {facts ? 'Hide facts' : 'Show facts'}
-          </button>
-        )}
-        {!seen && canManage && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void markSeen()}
-            className="rounded-md bg-slate-800 px-2.5 py-1 font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
-          >
-            {busy ? 'Marking…' : 'Mark as seen'}
-          </button>
-        )}
-      </div>
-      {error !== '' && (
-        <p role="alert" className="mt-1 text-red-700">
-          {error}
-        </p>
-      )}
-      {facts && (
-        <dl className="mt-2 grid grid-cols-[9rem_1fr] gap-x-3 gap-y-0.5 border-t border-slate-200 pt-2">
-          {event.evidence.map((f) => (
-            <div key={f.label} className="contents">
-              <dt className="text-slate-500">{f.label}</dt>
-              <dd className="break-words font-medium">{f.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </li>
   )
 }

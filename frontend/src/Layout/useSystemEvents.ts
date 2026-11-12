@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../api/client'
-import { fetchSystemEvents, type SystemEvent } from '../api/system'
+import { fetchSystemEventsSummary, type SystemEventsSummary } from '../api/system'
 import { EVENTS_POLL_MS } from './eventsRules'
 
-// The record of unexpected stops, read when the bar appears, every EVENTS_POLL_MS while the tab is visible and on demand (after a stop was marked as
+const NO_STOPS: SystemEventsSummary = { total: 0, unseen: 0 }
+
+// The summary of the record of unexpected stops (how many, how many are new, the newest new one: plan 259), read when the bar appears, every EVENTS_POLL_MS while the tab is visible and on demand (after a stop was marked as
 // seen). A failed read keeps what was known; a refusal (no scope) means there is nothing to show and nothing more is asked.
-export function useSystemEvents(intervalMs: number = EVENTS_POLL_MS): { events: SystemEvent[]; refresh: () => void } {
-  const [events, setEvents] = useState<SystemEvent[]>([])
+export function useSystemEvents(intervalMs: number = EVENTS_POLL_MS): { summary: SystemEventsSummary; refresh: () => void } {
+  const [summary, setSummary] = useState<SystemEventsSummary>(NO_STOPS)
   const refreshRef = useRef<() => void>(() => undefined)
 
   useEffect(() => {
@@ -25,8 +27,8 @@ export function useSystemEvents(intervalMs: number = EVENTS_POLL_MS): { events: 
       running = true
       controller = new AbortController()
       try {
-        const list = await fetchSystemEvents(controller.signal)
-        if (!stopped) setEvents(list)
+        const read = await fetchSystemEventsSummary(controller.signal)
+        if (!stopped) setSummary(read)
       } catch (e) {
         if (e instanceof ApiError && (e.status === 403 || e.status === 404)) forbidden = true
       } finally {
@@ -64,5 +66,5 @@ export function useSystemEvents(intervalMs: number = EVENTS_POLL_MS): { events: 
   const refresh = useCallback(() => {
     refreshRef.current()
   }, [])
-  return { events, refresh }
+  return { summary, refresh }
 }
