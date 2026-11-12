@@ -31,3 +31,20 @@ export function cvsOfPersona<T extends Pick<CvDocument, 'personas' | 'createdAt'
     })
     .sort((a, b) => (a.doc.createdAt < b.doc.createdAt ? 1 : a.doc.createdAt > b.doc.createdAt ? -1 : 0))
 }
+
+// How many different CVs a profile has: the CVs linked to any of its personas, each counted once (a CV can be attached to several
+// personas of one profile). Plan 260.
+export function cvCountOfProfile(docs: Pick<CvDocument, 'id' | 'personas'>[], personaIds: Iterable<string>): number {
+  const wanted = new Set(personaIds)
+  const seen = new Set<string>()
+  for (const doc of docs) {
+    if (doc.personas.some((p) => wanted.has(p.id))) seen.add(doc.id)
+  }
+  return seen.size
+}
+
+// "No CVs yet", "1 CV", "3 CVs": the text of a count pill.
+export function cvCountText(n: number): string {
+  if (n <= 0) return 'No CVs yet'
+  return n === 1 ? '1 CV' : `${n} CVs`
+}

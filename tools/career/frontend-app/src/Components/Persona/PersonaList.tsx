@@ -1,7 +1,7 @@
 import type { Persona, Profile } from '../../api'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
-import { groupPersonasByProfile } from './personaListRules'
+import { groupPersonasByProfile, type PersonaGroup } from './personaListRules'
 
 // The personas as a list, grouped by profile, each a link to a page of the caller's choosing: the one shared way
 // to pick a persona without a dropdown. The page supplies where an item leads (hrefFor) and what is shown under
@@ -13,6 +13,7 @@ export function PersonaList({
   onSelect,
   selectedId,
   renderExtra,
+  renderGroupExtra,
 }: {
   personas: Persona[]
   profiles: Profile[]
@@ -22,6 +23,8 @@ export function PersonaList({
   onSelect?: (persona: Persona) => void
   selectedId?: string | null
   renderExtra?: (persona: Persona) => React.ReactNode
+  // What sits at the right end of a profile's heading (a count); nothing when left out.
+  renderGroupExtra?: (group: PersonaGroup<Persona>) => React.ReactNode
 }) {
   const groups = groupPersonasByProfile(personas, profiles)
   const itemClass = 'flex items-start gap-3 rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md'
@@ -30,7 +33,10 @@ export function PersonaList({
     <div className="space-y-6">
       {groups.map((group) => (
         <section key={group.profileId || 'other'} aria-label={group.label}>
-          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{group.label}</h2>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">{group.label}</h2>
+            {renderGroupExtra?.(group)}
+          </div>
           <ul className="career-stagger space-y-2.5">
             {group.personas.map((p) => (
               <li key={p.id}>

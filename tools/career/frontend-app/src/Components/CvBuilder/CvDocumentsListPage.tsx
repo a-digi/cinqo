@@ -5,10 +5,11 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CV_DOCUMENTS_PATH, PERSONAS_PATH, cvDocumentsPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
+import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { PersonaList } from '../Persona/PersonaList'
 import { previewItems } from '../Persona/personaListRules'
 import { cvListMayBeCut } from '../ProfilesPage/profileViewRules'
-import { cvsOfPersona } from './cvPersonaRules'
+import { cvCountOfProfile, cvCountText, cvsOfPersona } from './cvPersonaRules'
 import { AllCvsList } from './AllCvsList'
 import { useCvDeletion } from './useCvDeletion'
 
@@ -25,6 +26,8 @@ export function CvDocumentsListPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   // Every CV (with its personas); null when they could not be read, so no count is shown.
   const [docs, setDocs] = useState<CvDocument[] | null>(null)
+  // True when reading the CVs failed: then no count is shown (a placeholder is shown only while they load).
+  const [docsFailed, setDocsFailed] = useState(false)
   const [error, setError] = useState('')
   // What went wrong with a delete (a failed file delete says the CV was kept); '' when nothing did.
   const [deleteError, setDeleteError] = useState('')
@@ -47,6 +50,7 @@ export function CvDocumentsListPage() {
           .then(setDocs)
           .catch(() => {
             setDocs(null)
+            setDocsFailed(true)
           })
       })
       .catch((err: unknown) => {
@@ -103,18 +107,38 @@ export function CvDocumentsListPage() {
                 personas={personas}
                 profiles={profiles}
                 hrefFor={(p) => cvDocumentsPathFor(p.id)}
+                renderGroupExtra={(group) => {
+                  if (docsFailed) return null
+                  if (docs === null) return <CountPill text="" />
+                  return (
+                    <CountPill
+                      text={cvCountText(
+                        cvCountOfProfile(
+                          docs,
+                          group.personas.map((p) => p.id),
+                        ),
+                      )}
+                    />
+                  )
+                }}
                 renderExtra={(p) => {
-                  if (docs === null) return null
+                  if (docsFailed) return null
+                  if (docs === null)
+                    return (
+                      <span className="mt-1.5 block">
+                        <CountPill text="" />
+                      </span>
+                    )
                   const mine = cvsOfPersona(docs, p.id)
                   const { shown, more } = previewItems(
                     mine.map((m) => m.doc.title),
                     PREVIEW_CVS,
                   )
                   return (
-                    <span className="mt-1.5 block text-xs text-gray-500">
-                      <span className="font-medium text-gray-700">{plural(mine.length, 'CV', 'CVs')}</span>
-                      {shown.length > 0 && <span> · {shown.join(' · ')}</span>}
-                      {more > 0 && <span> · +{more} more</span>}
+                    <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                      <CountPill text={cvCountText(mine.length)} />
+                      {shown.length > 0 && <span>{shown.join(' · ')}</span>}
+                      {more > 0 && <span>+{more} more</span>}
                     </span>
                   )
                 }}
@@ -136,5 +160,22 @@ export function CvDocumentsListPage() {
       </div>
       {deletion.dialogs}
     </div>
+  )
+}
+
+// A count as a small rounded pill in the page's colour; an empty text is the grey placeholder shown while the CVs are read, so no 0 flashes.
+function CountPill({ text }: { text: string }) {
+  if (text === '') {
+    return (
+      <span aria-hidden="true" data-testid="count-placeholder" className="inline-block h-5 w-14 animate-pulse rounded-full bg-gray-200" />
+    )
+  }
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+      style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+    >
+      {text}
+    </span>
   )
 }
