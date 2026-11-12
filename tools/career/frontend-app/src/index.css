@@ -1054,3 +1054,22 @@
     animation: none;
   }
 }
+
+/* The soft pulse of the "waiting for a reply" dot on a profile's applications numbers (plan 265); off under prefers-reduced-motion. */
+.career-wait-pulse {
+  animation: career-wait-pulse 2.2s ease-in-out infinite;
+}
+@keyframes career-wait-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(217, 119, 6, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .career-wait-pulse {
+    animation: none;
+  }
+}

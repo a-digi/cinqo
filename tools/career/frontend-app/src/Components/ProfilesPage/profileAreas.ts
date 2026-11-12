@@ -10,9 +10,11 @@ import {
   LANGUAGES_PATH,
   PERSONA_DETAILS_PATH,
   SKILLS_PATH,
+  jobBoardPathFor,
   personasPathFor,
 } from '../../paths'
 import {
+  applicationsIcon,
   coursesIcon,
   educationIcon,
   experienceIcon,
@@ -24,6 +26,7 @@ import {
   summaryIcon,
 } from '../../menuIcons'
 import { buildProfileSearch } from '../ProfileLibrary/libraryRules'
+import { applicationsTitle, type ApplicationNumbersView } from './applicationNumbersRules'
 
 export interface ProfileArea {
   key: string
@@ -57,11 +60,35 @@ export interface ProfileAreaLink {
   href: string
   // "Skills of Ada Lovelace", for the tooltip.
   title: string
+  // Only on the Applications link (plan 265): what is known of the profile's number of applications, shown as a pill on the tile.
+  applications?: ApplicationNumbersView
 }
 
-// The nine links of one profile, named after it.
-export function profileAreaLinks(profileId: string, name: string): ProfileAreaLink[] {
-  return PROFILE_AREAS.map((a) => ({ key: a.key, label: a.label, icon: a.icon, href: a.href(profileId), title: `${a.label} of ${name}` }))
+// The links of one profile, named after it: the nine pages of its data, then "Applications" (plan 265), which opens the profile's job board and carries
+// the number of its applications when that is known (what the page knows is passed in; without it the tile has no number).
+export function profileAreaLinks(
+  profileId: string,
+  name: string,
+  applications: ApplicationNumbersView = { kind: 'unknown' },
+): ProfileAreaLink[] {
+  const areas = PROFILE_AREAS.map((a) => ({
+    key: a.key,
+    label: a.label,
+    icon: a.icon,
+    href: a.href(profileId),
+    title: `${a.label} of ${name}`,
+  }))
+  return [
+    ...areas,
+    {
+      key: 'applications',
+      label: 'Applications',
+      icon: applicationsIcon,
+      href: jobBoardPathFor(profileId),
+      title: applicationsTitle(name, applications),
+      applications,
+    },
+  ]
 }
 
 // Whether a click on a link should be handled inside the tool (a plain left click); a click with a modifier key, or a middle click, is left to

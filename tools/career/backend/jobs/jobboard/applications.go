@@ -108,35 +108,69 @@ func Applications(profileID string) ([]Application, error) {
 	return out, nil
 }
 
-// ApplicationCount is how many applications there are in all (plan/ai/tools/career/step-238-applications-menu-item-only-with-applications.md):
-// the sum, over every profile, of the applications Applications lists for it, so the count can never disagree with the Applications page. The
-// menu uses it to show its Applications item only when there is something to open.
-func ApplicationCount() (int, error) {
-	rows, err := db.CareerDB.Query(`SELECT id FROM profiles`)
+// ProfileCounts is the numbers of one profile's applications for the Profiles page (plan 265): how many there are (the very list Applications
+// returns), how many of them are in the Applied status on the board and how many wait for a reply. A job can be in both of the last two.
+type ProfileCounts struct {
+	ProfileID string `json:"profileId"`
+	Total     int    `json:"total"`
+	Applied   int    `json:"applied"`
+	Waiting   int    `json:"waiting"`
+}
+
+// CountsOf works the numbers out of a profile's applications: Applied are those whose status on the board is of the Applied kind, Waiting those the
+// other side owes a reply to.
+func CountsOf(profileID string, apps []Application) ProfileCounts {
+	c := ProfileCounts{ProfileID: profileID, Total: len(apps)}
+	for _, a := range apps {
+		if a.Status != nil && a.Status.Kind == KindApplied {
+			c.Applied++
+		}
+		if a.WaitingForReply {
+			c.Waiting++
+		}
+	}
+	return c
+}
+
+// ApplicationCounts is the numbers of every profile, in the order of the profiles' own list (oldest first), with the total: the sum, over every
+// profile, of the applications Applications lists for it, so the numbers can never disagree with the Applications page. A profile with no
+// application is there with zeros.
+func ApplicationCounts() (int, []ProfileCounts, error) {
+	rows, err := db.CareerDB.Query(`SELECT id FROM profiles ORDER BY created_at ASC, id ASC`)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return 0, err
+			return 0, nil, err
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return 0, err
+		return 0, nil, err
 	}
 	rows.Close()
 	total := 0
+	counts := make([]ProfileCounts, 0, len(ids))
 	for _, id := range ids {
 		apps, err := Applications(id)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
-		total += len(apps)
+		c := CountsOf(id, apps)
+		total += c.Total
+		counts = append(counts, c)
 	}
-	return total, nil
+	return total, counts, nil
+}
+
+// ApplicationCount is how many applications there are in all (plan/ai/tools/career/step-238-applications-menu-item-only-with-applications.md):
+// the total of ApplicationCounts. The menu uses it to show its Applications item only when there is something to open.
+func ApplicationCount() (int, error) {
+	total, _, err := ApplicationCounts()
+	return total, err
 }

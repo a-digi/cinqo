@@ -17,7 +17,6 @@ import {
   aiSettingsIcon,
   applicationsIcon,
   companiesIcon,
-  contactsIcon,
   crawlMonitorIcon,
   cvDocumentsIcon,
   cvIcon,
@@ -38,8 +37,7 @@ type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
 // The Career tool's sidebar menu: Profiles first (one entry, not a group: each profile's card on that page opens that profile's own pages,
 // Personas, Summary, Goals, Skills, Experience, Education, Languages, Courses and Hobbies, so those are not menu entries, plan 233), then CV (your CVs
-// and the CV import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts
-// around it: Companies and Recruiters), then Settings. The Q&A pages are not menu entries any more: each page links to its help (plan 239). A parent is a pure grouping label, never a page of its own, and a group is only
+// and the CV import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it), then Companies and Recruiters (entries of their own directly under Career), then Settings. The Q&A pages are not menu entries any more: each page links to its help (plan 239). A parent is a pure grouping label, never a page of its own, and a group is only
 // shown when at least one of its pages is visible to the user (filterVisible, which works at any depth), so the per-page scopes below are
 // all that decide who sees what. Every path is unchanged by the regroupings (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md,
 // step-228-cv-menu-under-career.md); the pages themselves stay registered at their addresses.
@@ -77,16 +75,11 @@ export const careerMenuEntry: MenuEntry = {
             { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'], icon: crawlMonitorIcon },
           ],
         },
-        {
-          label: 'Contacts',
-          icon: contactsIcon,
-          children: [
-            { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'], icon: companiesIcon },
-            { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'], icon: recruitersIcon },
-          ],
-        },
       ],
     },
+    // The companies and the recruiters behind the jobs: directly under Career, not in a group of their own (the user asked for it; they were in a Contacts group under Jobs).
+    { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'], icon: companiesIcon },
+    { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'], icon: recruitersIcon },
     {
       label: 'Settings',
       icon: settingsIcon,

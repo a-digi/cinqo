@@ -17,7 +17,10 @@ import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
+import { numbersFor } from './applicationNumbersRules'
+import { ProfileApplicationNumbers } from './ProfileApplicationNumbers'
 import { ProfileAreaCards } from './ProfileAreaCards'
+import { useApplicationNumbers } from './useApplicationNumbers'
 import { PhotoAvatar } from '../ProfileImage/PhotoAvatar'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
@@ -45,6 +48,8 @@ export function ProfilesPage() {
   // The profiles whose add-link form is open; every form starts hidden.
   const [openLinkFormIds, setOpenLinkFormIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  // How many applications each profile has (plan 265): one request for all of them when the page opens.
+  const applicationNumbers = useApplicationNumbers()
 
   function load() {
     setError('')
@@ -428,7 +433,16 @@ export function ProfilesPage() {
                           </button>
                         </div>
                       )}
-                      <ProfileAreaCards profileId={p.id} name={p.firstName || p.lastName ? name : '(unnamed)'} />
+                      <ProfileApplicationNumbers
+                        profileId={p.id}
+                        name={p.firstName || p.lastName ? name : '(unnamed)'}
+                        view={numbersFor(applicationNumbers.state, p.id)}
+                      />
+                      <ProfileAreaCards
+                        profileId={p.id}
+                        name={p.firstName || p.lastName ? name : '(unnamed)'}
+                        applications={numbersFor(applicationNumbers.state, p.id)}
+                      />
                     </div>
                   )
                 })}

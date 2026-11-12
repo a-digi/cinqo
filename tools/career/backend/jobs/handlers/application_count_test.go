@@ -28,7 +28,7 @@ func TestNoProfilesAndNoApplicationsCountZero(t *testing.T) {
 	handlertest.SetupHandlerDB(t)
 	rec := handlertest.BoardCall(t, ApplicationCountHandler, "GET", "/application-count", "")
 	handlertest.WantStatus(t, rec, 200)
-	if strings.TrimSpace(rec.Body.String()) != `{"total":0}` {
+	if strings.TrimSpace(rec.Body.String()) != `{"total":0,"profiles":[]}` {
 		t.Errorf("the exact answer: %s", rec.Body.String())
 	}
 	handlertest.BoardFixture(t)
@@ -129,5 +129,118 @@ func TestOnlyGETIsAllowedAndAnUnreadableDatabaseIsAPlain500(t *testing.T) {
 	rec := handlertest.BoardCall(t, ApplicationCountHandler, "GET", "/application-count", "")
 	if rec.Code != 500 || strings.Contains(rec.Body.String(), "no such table") || !strings.Contains(rec.Body.String(), "failed to count the applications") {
 		t.Errorf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type profileNumbers struct {
+	ProfileID string `json:"profileId"`
+	Total     int    `json:"total"`
+	Applied   int    `json:"applied"`
+	Waiting   int    `json:"waiting"`
+}
+
+func numbersOf(t *testing.T) (int, []profileNumbers) {
+	t.Helper()
+	rec := handlertest.BoardCall(t, ApplicationCountHandler, "GET", "/application-count", "")
+	handlertest.WantStatus(t, rec, 200)
+	var out struct {
+		Total    int              `json:"total"`
+		Profiles []profileNumbers `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
+	}
+	return out.Total, out.Profiles
+}
+
+// older makes the first profile the older one, so the order of the answer is known (created_at has a second's resolution).
+func older(t *testing.T, first string) {
+	t.Helper()
+	if _, err := db.CareerDB.Exec(`UPDATE profiles SET created_at = '2020-01-01 00:00:00' WHERE id = ?`, first); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Plan 265: every profile is in the answer, zeros included, oldest profile first, and the sum of their totals is the total.
+func TestEveryProfileIsListedWithZerosOldestFirst(t *testing.T) {
+	p1, p2 := handlertest.BoardFixture(t)
+	older(t, p2)
+	total, ps := numbersOf(t)
+	if total != 0 || len(ps) != 2 {
+		t.Fatalf("%d %+v", total, ps)
+	}
+	if ps[0].ProfileID != p2 || ps[1].ProfileID != p1 {
+		t.Errorf("the order of the profiles' own list: %+v", ps)
+	}
+	for _, p := range ps {
+		if p.Total != 0 || p.Applied != 0 || p.Waiting != 0 {
+			t.Errorf("zeros: %+v", p)
+		}
+	}
+}
+
+func TestEachProfilesTotalAppliedAndWaitingFollowTheApplicationsRule(t *testing.T) {
+	p1, p2 := handlertest.BoardFixture(t)
+	for _, id := range []string{"j3", "j4"} {
+		insertJobRow(t, id)
+	}
+	older(t, p1)
+	// p1: j1 Applied and a message sent (an application, applied, waiting); j2 Declined with a reply received (an application, not applied, not waiting);
+	// j3 only a protocol entry sent (an application, not applied, waiting); j4 Applied with nothing else (applied, not waiting)
+	handlertest.MustSet(t, p1, "j1", jobboard.AppliedID)
+	addEntry(t, p1, "j1", "sent", "2026-11-03")
+	handlertest.MustSet(t, p1, "j2", jobboard.DeclinedID)
+	addEntry(t, p1, "j2", "received", "2026-11-04")
+	addEntry(t, p1, "j3", "sent", "2026-11-05")
+	handlertest.MustSet(t, p1, "j4", jobboard.AppliedID)
+	// p2: the same job j1 Applied, nothing else
+	handlertest.MustSet(t, p2, "j1", jobboard.AppliedID)
+	total, ps := numbersOf(t)
+	if len(ps) != 2 || ps[0].ProfileID != p1 || ps[1].ProfileID != p2 {
+		t.Fatalf("%+v", ps)
+	}
+	if ps[0].Total != 4 || ps[0].Applied != 2 || ps[0].Waiting != 2 {
+		t.Errorf("p1: %+v", ps[0])
+	}
+	if ps[1].Total != 1 || ps[1].Applied != 1 || ps[1].Waiting != 0 {
+		t.Errorf("p2: %+v", ps[1])
+	}
+	a, _ := applicationsOf(t, p1)
+	b, _ := applicationsOf(t, p2)
+	if total != ps[0].Total+ps[1].Total || total != len(a)+len(b) || total != countOf(t) {
+		t.Errorf("total %d, p1 %d, p2 %d, pages %d+%d", total, ps[0].Total, ps[1].Total, len(a), len(b))
+	}
+}
+
+func TestANewerReplyDoesNotMakeTheJobWaitingAndAProfileGoneLeavesTheList(t *testing.T) {
+	p1, p2 := handlertest.BoardFixture(t)
+	older(t, p1)
+	addEntry(t, p1, "j1", "sent", "2026-11-03")
+	addEntry(t, p1, "j1", "received", "2026-11-04") // the newest entry is a reply: nobody owes an answer
+	addEntry(t, p2, "j2", "sent", "2026-11-03")
+	_, ps := numbersOf(t)
+	if ps[0].Total != 1 || ps[0].Waiting != 0 || ps[1].Waiting != 1 {
+		t.Errorf("%+v", ps)
+	}
+	if err := profile.DeleteProfile(p2); err != nil {
+		t.Fatal(err)
+	}
+	total, ps := numbersOf(t)
+	if len(ps) != 1 || ps[0].ProfileID != p1 || total != 1 {
+		t.Errorf("a deleted profile is not listed: %d %+v", total, ps)
+	}
+}
+
+// The menu reads only total: the answer still has it, under that name, as before.
+func TestTheAnswerStillCarriesTheTotalForTheMenu(t *testing.T) {
+	p1, _ := handlertest.BoardFixture(t)
+	handlertest.MustSet(t, p1, "j1", jobboard.AppliedID)
+	rec := handlertest.BoardCall(t, ApplicationCountHandler, "GET", "/application-count", "")
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["total"]) != "1" || raw["profiles"] == nil || len(raw) != 2 {
+		t.Errorf("%s", rec.Body.String())
 	}
 }
