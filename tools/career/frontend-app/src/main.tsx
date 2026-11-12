@@ -127,6 +127,7 @@ import {
   SETTINGS_PATH,
   LEGACY_PORTALS_PATH,
   LEGACY_VIEW_PORTAL_PATH,
+  HOW_PLATFORMS_WORK_PATH,
   PLATFORMS_PATH,
   VIEW_PLATFORM_PATH,
   CRAWL_MONITOR_PATH,
@@ -517,6 +518,14 @@ window.__cinqoToolBridge.registerRoute({
   path: RECRUITERS_PATH,
   mount: (container) => {
     mountReact(container, <RecruitersPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: HOW_PLATFORMS_WORK_PATH,
+  mount: (container) => {
+    mountReact(container, <PortalsPage startWithInfo />)
   },
   unmount: unmountReact,
 })

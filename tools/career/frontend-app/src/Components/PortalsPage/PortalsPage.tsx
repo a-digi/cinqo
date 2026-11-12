@@ -31,6 +31,11 @@ import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { HEADER_BUTTON } from './Info/platformInfoData'
+import { infoEntryFor } from './Info/platformInfoRules'
+import { PlatformInfoCard } from './Info/PlatformInfoCard'
+import { PlatformInfoModal } from './Info/PlatformInfoModal'
+import { PlatformInfoTeaser } from './Info/PlatformInfoTeaser'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { crawlAiAdvice, linkInstructionFailures } from './crawlAiAdvice'
@@ -57,17 +62,22 @@ import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
 // and plan/ai/tools/career/step-59-portals-add-link-container-overlay.md
 // ("Add link" as an in-card overlay instead of an always-visible row).
 // Plan 190: the page and everything under it know the Browser's selected engine.
-export function PortalsPage() {
+export function PortalsPage({ startWithInfo = false }: { startWithInfo?: boolean }) {
   return (
     <CrawlEngineProvider>
-      <PortalsPageContent />
+      <PortalsPageContent startWithInfo={startWithInfo} />
     </CrawlEngineProvider>
   )
 }
 
-function PortalsPageContent() {
+function PortalsPageContent({ startWithInfo }: { startWithInfo: boolean }) {
   const engine = useCrawlEngine()
   const [portals, setPortals] = useState<Portal[]>([])
+  // True once the list was read (plan 262): the short "what are platforms for" part is shown only then, so it never flashes for a person who has platforms.
+  const [loaded, setLoaded] = useState(false)
+  // The "How platforms work" infographic.
+  // The "How platforms work" menu entry opens the page with it already open (startWithInfo); closing it then goes to the plain Platforms page.
+  const [infoOpen, setInfoOpen] = useState(startWithInfo)
   const [isNewPortalModalOpen, setIsNewPortalModalOpen] = useState(false)
   const [newPortalName, setNewPortalName] = useState('')
   const [openPortalIds, setOpenPortalIds] = useState<Set<string>>(new Set())
@@ -143,7 +153,10 @@ function PortalsPageContent() {
   function load() {
     setError('')
     fetchPortals()
-      .then(setPortals)
+      .then((list) => {
+        setPortals(list)
+        setLoaded(true)
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -393,6 +406,7 @@ function PortalsPageContent() {
   const aiLinkPortal = portals.find((p) => p.links.some((l) => l.id === aiLinkId)) ?? null
   const aiLink = aiLinkPortal?.links.find((l) => l.id === aiLinkId) ?? null
   const summary = summarizePortals(portals, engine)
+  const infoEntry = infoEntryFor(loaded, portals.length)
 
   return (
     <div className="career-v-left career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
@@ -407,6 +421,18 @@ function PortalsPageContent() {
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500">Deleting a platform permanently deletes every link it owns.</p>
             <div className="flex shrink-0 items-center gap-3">
+              {infoEntry === 'button' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInfoOpen(true)
+                  }}
+                  className="shrink-0 rounded-full border px-3 py-1 text-sm font-semibold hover:bg-blue-50"
+                  style={{ borderColor: PAGE_ACCENT.from, color: PAGE_ACCENT.text }}
+                >
+                  {HEADER_BUTTON}
+                </button>
+              )}
               <HelpLink page={PLATFORMS_PATH} />
               {/* Links on to the Jobs page, whose jobs come from these portals. */}
               <AppLink
@@ -420,6 +446,19 @@ function PortalsPageContent() {
           </div>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+          {infoEntry === 'teaser' && (
+            <div className="mb-4">
+              <PlatformInfoTeaser
+                onOpen={() => {
+                  setInfoOpen(true)
+                }}
+                onNew={() => {
+                  setIsNewPortalModalOpen(true)
+                }}
+              />
+            </div>
+          )}
 
           {/* items-start: without it, CSS Grid's default align-items:stretch
           forces every card in a row to match the tallest (open) sibling's
@@ -760,8 +799,27 @@ function PortalsPageContent() {
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
           />
+          <PlatformInfoCard
+            onOpen={() => {
+              setInfoOpen(true)
+            }}
+          />
         </aside>
       </div>
+
+      <PlatformInfoModal
+        open={infoOpen}
+        onClose={() => {
+          setInfoOpen(false)
+          if (startWithInfo) window.__cinqoToolBridge.navigate(PLATFORMS_PATH)
+        }}
+        facts={{
+          portals: summary.portals,
+          links: summary.links,
+          withInstructions: summary.withInstructions,
+          neverCrawled: summary.neverCrawled,
+        }}
+      />
 
       <Modal
         open={isNewPortalModalOpen}

@@ -952,3 +952,105 @@
     top: 1.5rem;
   }
 }
+
+/* The "How platforms work" poster (plan 262): chapters come in as they scroll into view, the arrows draw once, a dot travels along the crawl and the
+   crawl's first node pulses. All of it is off under prefers-reduced-motion, where everything is simply there. */
+.career-info-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 500ms ease-out,
+    transform 500ms ease-out;
+  transition-delay: calc(var(--d, 0) * 80ms);
+}
+.career-info-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+.career-info-arrow {
+  display: inline-flex;
+  align-items: center;
+  width: 2.5rem;
+  height: 1.5rem;
+}
+.career-info-arrow.is-down {
+  transform: rotate(90deg);
+}
+.career-info-arrow-line {
+  display: block;
+  flex: 1;
+  height: 2.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.career-info-arrow-head {
+  display: block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-left: -0.5rem;
+  border-top: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  opacity: 0;
+}
+.is-in .career-info-arrow-line {
+  animation: career-info-grow 600ms ease-out 250ms forwards;
+}
+.is-in .career-info-arrow-head {
+  animation: career-info-head 200ms ease-out 750ms forwards;
+}
+@keyframes career-info-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes career-info-head {
+  to {
+    opacity: 1;
+  }
+}
+.career-info-run {
+  animation: career-info-run 4.5s ease-in-out infinite;
+}
+@keyframes career-info-run {
+  0% {
+    left: 0;
+  }
+  100% {
+    left: calc(100% - 0.75rem);
+  }
+}
+.career-info-pulse {
+  animation: career-info-pulse 2.4s ease-in-out infinite;
+}
+@keyframes career-info-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(37, 99, 235, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .career-info-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .career-info-arrow-line {
+    transform: none;
+    animation: none !important;
+  }
+  .career-info-arrow-head {
+    opacity: 1;
+    animation: none !important;
+  }
+  .career-info-run,
+  .career-info-pulse {
+    animation: none;
+  }
+}
