@@ -4,28 +4,9 @@ import { Decor } from '../Decor/Decor'
 import { Modal } from '../Modal/Modal'
 import { gradient, type Accent } from '../../Components/JobsPage/jobsTheme'
 import { chapterInView } from './infographicRules'
+import { BAR_LINE, prefersReducedMotion, scrollParentOf } from './scrollRules'
 import type { Chapter } from './infographicTypes'
 import { Reveal } from './Reveal'
-
-// The element that scrolls the poster: the nearest ancestor that scrolls (the body of the full-page modal).
-function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
-  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
-    const overflow = getComputedStyle(p).overflowY
-    if (overflow === 'auto' || overflow === 'scroll') return p
-  }
-  return null
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
-
-// Where the chapter bar's own height ends: a chapter counts as "in view" once its top has passed this line.
-const BAR_LINE = 96
 
 export interface InfographicProps<Id extends string> {
   open: boolean

@@ -1,18 +1,9 @@
-import {
-  AlertIcon,
-  BriefcaseIcon,
-  CameraIcon,
-  CheckCircleIcon,
-  LayersIcon,
-  LockIcon,
-  PDFIcon,
-  TargetIcon,
-  UserIcon,
-} from '../../../Shared/Icons/icons'
+import { BriefcaseIcon, CameraIcon, CheckCircleIcon, LayersIcon, PDFIcon, TargetIcon, UserIcon } from '../../../Shared/Icons/icons'
 import { Arrow } from '../../../Shared/Infographic/Arrow'
 import { FirstStepsPath as SharedFirstStepsPath } from '../../../Shared/Infographic/FirstStepsPath'
 import { FlowRow, type FlowNode } from '../../../Shared/Infographic/FlowRow'
 import type { JourneyStep } from '../../../Shared/Infographic/infographicTypes'
+import { BlueFrame } from '../../../Shared/Infographic/landing/BlueFrame'
 import { Reveal } from '../../../Shared/Infographic/Reveal'
 import { ACCENTS, accentFor, gradient, initialOf, type Accent } from '../../JobsPage/jobsTheme'
 import { PROFILE_AREAS } from '../profileAreas'
@@ -446,54 +437,58 @@ export function FirstStepsPath({
   return <SharedFirstStepsPath specs={FIRST_STEPS} steps={steps} progress={progress} nextId={nextId} />
 }
 
-// The three things to be careful with, each with what happens.
-export function CarefulPicture() {
-  const rows = [
-    {
-      id: 'delete',
-      icon: <AlertIcon className="h-5 w-5" />,
-      what: 'Delete a profile',
-      result: 'Gone for good, with its target roles and what they own',
-      accent: ACCENTS[3],
-    },
-    {
-      id: 'import',
-      icon: <LockIcon className="h-5 w-5" />,
-      what: 'Import a CV',
-      result: 'A proposal you review; nothing is saved until you say so',
-      accent: ACCENTS[2],
-    },
-    {
-      id: 'ai',
-      icon: <CheckCircleIcon className="h-5 w-5" />,
-      what: 'An AI suggestion',
-      result: 'You approve or decline each one; declining deletes it',
-      accent: ACCENTS[0],
-    },
-  ]
+// The picture of the hero band: the five parts of the flow as small blue-outlined icon tiles joined by circled "+" (a calm picture, nothing moves).
+export function HeroCluster() {
   return (
-    <ul className="mx-auto w-full max-w-3xl space-y-2.5">
-      {rows.map((r, i) => (
-        <Reveal as="li" key={r.id} delay={i}>
-          <div
-            className="flex items-center gap-3 rounded-2xl border bg-white p-3 shadow-sm"
-            style={{ borderColor: r.accent.from }}
-            data-row={r.id}
-          >
-            <span
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white"
-              style={{ background: gradient(r.accent) }}
-              aria-hidden="true"
-            >
-              {r.icon}
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-900">{r.what}</div>
-              <div className="text-xs text-gray-600">{r.result}</div>
+    <ol aria-label="The parts of a profile" className="grid grid-cols-3 gap-x-6 gap-y-5" data-testid="hero-cluster">
+      {HERO_NODES.map((n, i) => (
+        <li key={n.id} className={i === 3 ? 'col-start-1 sm:col-start-auto' : ''}>
+          <BlueFrame badge={i < HERO_NODES.length - 1 ? '+' : undefined} className="!bg-white/95">
+            <div className="flex flex-col items-center gap-1 text-center">
+              <span className="text-gray-900" aria-hidden="true">
+                {HERO_ICONS[n.id]}
+              </span>
+              <span className="text-xs font-bold text-gray-900">{n.label}</span>
             </div>
-          </div>
-        </Reveal>
+          </BlueFrame>
+        </li>
       ))}
-    </ul>
+    </ol>
+  )
+}
+
+// The picture of the first tall tile of "Jobs and CVs": a job's match score, big, in a blue frame.
+export function ScoreFrame() {
+  return (
+    <BlueFrame badge="%" className="mx-auto max-w-xs">
+      <div className="text-center" data-testid="score-frame">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Backend Engineer, Acme</div>
+        <div className="mt-1 text-5xl font-black tabular-nums text-gray-900">82%</div>
+        <div className="mx-auto mt-2 h-2 w-40 overflow-hidden rounded-full bg-gray-200">
+          <div className="h-full rounded-full" style={{ width: '82%', background: '#16a34a' }} />
+        </div>
+        <div className="mt-1 text-xs font-medium text-green-700">match with Ada&apos;s profile</div>
+      </div>
+    </BlueFrame>
+  )
+}
+
+// The picture of the second tall tile: an auto-add rule, "at least 70%" leading to a status you choose.
+export function RuleFrame() {
+  const accent = ACCENTS[4]
+  return (
+    <BlueFrame badge="+" className="mx-auto max-w-xs">
+      <div className="flex items-center justify-center gap-2 text-center" data-testid="rule-frame">
+        <div className="rounded-xl bg-violet-50 px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">If the score is</div>
+          <div className="text-lg font-black text-gray-900">at least 70%</div>
+        </div>
+        <Arrow accent={accent} />
+        <div className="rounded-xl bg-green-50 px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Put it on the board as</div>
+          <div className="text-lg font-black text-gray-900">a status you choose</div>
+        </div>
+      </div>
+    </BlueFrame>
   )
 }
