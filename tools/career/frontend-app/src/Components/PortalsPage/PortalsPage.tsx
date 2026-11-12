@@ -62,22 +62,21 @@ import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
 // and plan/ai/tools/career/step-59-portals-add-link-container-overlay.md
 // ("Add link" as an in-card overlay instead of an always-visible row).
 // Plan 190: the page and everything under it know the Browser's selected engine.
-export function PortalsPage({ startWithInfo = false }: { startWithInfo?: boolean }) {
+export function PortalsPage() {
   return (
     <CrawlEngineProvider>
-      <PortalsPageContent startWithInfo={startWithInfo} />
+      <PortalsPageContent />
     </CrawlEngineProvider>
   )
 }
 
-function PortalsPageContent({ startWithInfo }: { startWithInfo: boolean }) {
+function PortalsPageContent() {
   const engine = useCrawlEngine()
   const [portals, setPortals] = useState<Portal[]>([])
   // True once the list was read (plan 262): the short "what are platforms for" part is shown only then, so it never flashes for a person who has platforms.
   const [loaded, setLoaded] = useState(false)
   // The "How platforms work" infographic.
-  // The "How platforms work" menu entry opens the page with it already open (startWithInfo); closing it then goes to the plain Platforms page.
-  const [infoOpen, setInfoOpen] = useState(startWithInfo)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [isNewPortalModalOpen, setIsNewPortalModalOpen] = useState(false)
   const [newPortalName, setNewPortalName] = useState('')
   const [openPortalIds, setOpenPortalIds] = useState<Set<string>>(new Set())
@@ -781,6 +780,11 @@ function PortalsPageContent({ startWithInfo }: { startWithInfo: boolean }) {
             <PlusIcon />
             New platform
           </button>
+          <PlatformInfoCard
+            onOpen={() => {
+              setInfoOpen(true)
+            }}
+          />
           {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
               the global auto-discovery could crawl. */}
           {anyLinkAutoDiscoverable(portals, engine) && <AutoDiscoveryPanel />}
@@ -799,11 +803,6 @@ function PortalsPageContent({ startWithInfo }: { startWithInfo: boolean }) {
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
           />
-          <PlatformInfoCard
-            onOpen={() => {
-              setInfoOpen(true)
-            }}
-          />
         </aside>
       </div>
 
@@ -811,7 +810,6 @@ function PortalsPageContent({ startWithInfo }: { startWithInfo: boolean }) {
         open={infoOpen}
         onClose={() => {
           setInfoOpen(false)
-          if (startWithInfo) window.__cinqoToolBridge.navigate(PLATFORMS_PATH)
         }}
         facts={{
           portals: summary.portals,

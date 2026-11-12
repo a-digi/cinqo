@@ -111,8 +111,6 @@ export const JOB_DETAILS_PATH = '/tools/career/job-details'
 export const COMPANIES_PATH = '/tools/career/companies'
 export const RECRUITERS_PATH = '/tools/career/recruiters'
 export const PLATFORMS_PATH = '/tools/career/platforms'
-// "How platforms work" (plan 262): the Platforms page with the infographic already open; closing it goes back to PLATFORMS_PATH. The first entry of the Platforms menu.
-export const HOW_PLATFORMS_WORK_PATH = '/tools/career/platforms/how-it-works'
 // The earlier address of the Platforms list (it said portals): kept as a route that sends on to PLATFORMS_PATH.
 export const LEGACY_PORTALS_PATH = '/tools/career/portals'
 export const CRAWL_MONITOR_PATH = '/tools/career/crawl-monitor'

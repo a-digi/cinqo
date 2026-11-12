@@ -5,7 +5,6 @@ import {
   IMPORT_CV_PATH,
   JOBS_PATH,
   APPLICATIONS_PATH,
-  HOW_PLATFORMS_WORK_PATH,
   PLATFORMS_PATH,
   PROFILES_PATH,
   RECRUITERS_PATH,
@@ -20,7 +19,6 @@ import {
   companiesIcon,
   contactsIcon,
   crawlMonitorIcon,
-  howPlatformsWorkIcon,
   cvDocumentsIcon,
   cvIcon,
   importIcon,
@@ -75,8 +73,6 @@ export const careerMenuEntry: MenuEntry = {
           label: 'Platforms',
           icon: platformsGroupIcon,
           children: [
-            // The first entry (plan 262): opens the Platforms page with the infographic that explains platforms, links, the crawler and instructions.
-            { label: 'How platforms work', path: HOW_PLATFORMS_WORK_PATH, scopes: ['tool:career:portals'], icon: howPlatformsWorkIcon },
             { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'], icon: platformsIcon },
             { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'], icon: crawlMonitorIcon },
           ],

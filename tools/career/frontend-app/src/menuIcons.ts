@@ -74,10 +74,6 @@ export const platformsGroupIcon = g24(
 export const platformsIcon = g24(
   '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 3.8 5.7 3.8 9s-1.2 6.3-3.8 9c-2.6-2.7-3.8-5.7-3.8-9S9.4 5.7 12 3z"/>',
 )
-// How platforms work: a question mark in a circle.
-export const howPlatformsWorkIcon = g24(
-  '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.2.9-1.2 1.8M12 17h.01"/>',
-)
 // Crawl Monitor: a pulse line.
 export const crawlMonitorIcon = g24('<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>')
 // Contacts (group): an address book.

@@ -11,7 +11,7 @@ export function PlatformInfoCard({ onOpen }: { onOpen: () => void }) {
   return (
     <section
       aria-labelledby="platform-card-title"
-      className="mt-5 rounded-2xl border p-4"
+      className="mb-4 rounded-2xl border p-4"
       style={{ borderColor: accent.soft, background: accent.soft }}
     >
       <div className="flex items-center gap-2">
