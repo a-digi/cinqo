@@ -11,6 +11,9 @@ export const RECOMMENDED_LOCAL_CRAWL_MODEL = 'qwen2.5-coder-3b-instruct-q4_k_m'
 // The Cinqo page where models are downloaded, switched on and chosen as the default.
 export const LOCAL_AI_PATH = '/admin/local-ai'
 
+// The Cinqo page where the API keys of the remote (cloud) AI platforms are added.
+export const REMOTE_AI_PATH = '/admin/api-keys'
+
 export function modelLabel(platform: Pick<Platform, 'modelNames'>, id: string): string {
   const name = platform.modelNames?.[id]
   return name !== undefined && name.trim() !== '' ? name : id

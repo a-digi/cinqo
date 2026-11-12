@@ -27,6 +27,7 @@ import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../Persona
 import { analyseCv, analyseCvByCode } from './analysisFlow'
 import { prepareCodeImport } from './codeImport/runCodeImport'
 import { importContextProblem } from './importContext'
+import { importAiState, NEEDS_AI_REASON } from './importAiRules'
 import { importCvRunPathFor } from '../../paths'
 
 // Where an import start is: the upload form, the analysis under way, or a failure.
@@ -57,6 +58,8 @@ export function useImportStart({ onRunsChanged, targetProfileId = '' }: { onRuns
   const chosen = resolveImportAi(settingsAi, ai.platforms, aiOverride)
   const platform = chosen.platform
   const platformsLoaded = ai.loaded
+  // Whether an AI is set up at all (remote with a key, or local): without one nothing can be imported and the page says how to set one up.
+  const aiState = importAiState(ai.loaded, ai.platforms.length)
 
   function pickFile(next: File | null) {
     setError('')
@@ -175,7 +178,7 @@ export function useImportStart({ onRunsChanged, targetProfileId = '' }: { onRuns
   }
 
   async function handleUpload() {
-    if (!file) return
+    if (!file || aiState === 'needs-ai') return
     setUploading(true)
     setError('')
 
@@ -208,6 +211,7 @@ export function useImportStart({ onRunsChanged, targetProfileId = '' }: { onRuns
   // whose context is too small), or null when it started. The profile is the hook's own unless `target` is given (a "Process again" of an old run keeps
   // that run's own: '' means that run had none).
   async function startFromStored(fileId: string, originalFilename: string, target?: string): Promise<string | null> {
+    if (aiState === 'needs-ai') return NEEDS_AI_REASON
     const tooSmall = await contextProblem()
     if (tooSmall) return tooSmall
     await runAnalysis(fileId, originalFilename, target ?? targetProfileId)
@@ -241,6 +245,9 @@ export function useImportStart({ onRunsChanged, targetProfileId = '' }: { onRuns
     settingsAi,
     platforms: ai.platforms,
     platformsLoaded,
+    aiState,
+    // Reads the platforms and keys again (after the person set an AI up on another page).
+    recheckAi: ai.reload,
     changeAi: (platformId: string, model: string) => {
       setAiOverride({ platformId, model })
     },

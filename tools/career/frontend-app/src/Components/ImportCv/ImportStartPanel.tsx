@@ -4,6 +4,7 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { FailureNotice } from './FailureNotice'
 import { ImportAiPicker } from './ImportAiPicker'
+import { ImportNeedsAi } from './ImportNeedsAi'
 import { ImportPipeline } from './ImportPipeline'
 import { UnsuitableModelNotice } from './UnsuitableModelNotice'
 import { pipelineStages } from './pipelineRules'
@@ -32,6 +33,7 @@ export function ImportStartPanel({ start }: { start: ImportStart }) {
     settingsAi,
     platforms,
     platformsLoaded,
+    aiState,
   } = start
   // Dropzone state — visual only (the click-to-browse path already
   // worked before; this adds a real drag-and-drop path to match the
@@ -52,7 +54,15 @@ export function ImportStartPanel({ start }: { start: ImportStart }) {
     <>
       <ImportPipeline stages={stages} onStartOver={start.startOver} />
 
-      {state === 'upload' && platformsLoaded && platforms.length > 0 && (
+      {state === 'upload' && aiState === 'needs-ai' && (
+        <ImportNeedsAi
+          onRecheck={() => {
+            start.recheckAi()
+          }}
+        />
+      )}
+
+      {state === 'upload' && aiState !== 'needs-ai' && platformsLoaded && platforms.length > 0 && (
         <ImportAiPicker
           choice={chosen}
           settings={settingsAi}
@@ -66,11 +76,13 @@ export function ImportStartPanel({ start }: { start: ImportStart }) {
         />
       )}
 
-      {state === 'upload' && isUnsuitableFor(chosen.platform, chosen.model, CV_IMPORT_TASK) && chosen.platform && chosen.model && (
-        <UnsuitableModelNotice choice={`${chosen.platform.name} · ${modelLabel(chosen.platform, chosen.model)}`} />
-      )}
+      {state === 'upload' &&
+        aiState !== 'needs-ai' &&
+        isUnsuitableFor(chosen.platform, chosen.model, CV_IMPORT_TASK) &&
+        chosen.platform &&
+        chosen.model && <UnsuitableModelNotice choice={`${chosen.platform.name} · ${modelLabel(chosen.platform, chosen.model)}`} />}
 
-      {state === 'upload' && (
+      {state === 'upload' && aiState !== 'needs-ai' && (
         <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>
           <div
             role="button"

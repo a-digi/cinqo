@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchCvText, type CVImportRun } from '../../api'
+import { NEEDS_AI_REASON } from './importAiRules'
 import { ImportStartPanel } from './ImportStartPanel'
 import { STORED_CV_GONE_MESSAGE, storedCvAvailable } from './runOutcome'
 import { useImportStart } from './useImportStart'
@@ -58,7 +59,8 @@ export function RestartPanel({ run, onClose }: { run: CVImportRun; onClose: () =
             onClick={() => {
               void startSame()
             }}
-            disabled={!start.platformsLoaded}
+            disabled={!start.platformsLoaded || start.aiState === 'needs-ai'}
+            title={start.aiState === 'needs-ai' ? NEEDS_AI_REASON : undefined}
             className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Use the same CV again

@@ -13,6 +13,7 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 import { writeAddress } from '../../Shared/AddressState/writeAddress'
 import { ImportTargetPicker } from './ImportTargetPicker'
+import { NEEDS_AI_REASON } from './importAiRules'
 import { buildImportSearch, parseImportTarget, resolveImportTarget } from './importTargetRules'
 
 // Import CV's own page — upload a CV PDF (or process an earlier one again) and the import history. The analysis itself starts here:
@@ -98,7 +99,7 @@ export function ImportCvPage() {
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          {start.state === 'upload' && profiles !== null && (
+          {start.state === 'upload' && start.aiState !== 'needs-ai' && profiles !== null && (
             <ImportTargetPicker
               profiles={profiles}
               target={target}
@@ -152,10 +153,12 @@ export function ImportCvPage() {
                         </a>
                         <button
                           type="button"
+                          disabled={start.aiState === 'needs-ai'}
+                          title={start.aiState === 'needs-ai' ? NEEDS_AI_REASON : undefined}
                           onClick={() => {
                             void handleProcessAgain(run)
                           }}
-                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Process again
                         </button>
