@@ -5,6 +5,10 @@ import { BAR_LINE, prefersReducedMotion, scrollParentOf } from '../scrollRules'
 import { IconTabs, type IconTab } from './IconTabs'
 import { LANDING } from './landingTokens'
 
+// A section that a tab click scrolled to sits at the scroll margin (96 px) give or take a fraction of a pixel (96.19 was seen live); this much of slack
+// keeps the tab that was clicked the current one.
+export const SETTLE = 8
+
 export interface LandingSection {
   id: string
   // The full heading of the section: the region is named by it.
@@ -48,7 +52,7 @@ function Page({ idPrefix, hero, tabs, sections, renderSection }: LandingProps) {
     const update = () => {
       const top = scroller.getBoundingClientRect().top
       const tops = sections.map((s) => (refs.current[s.id]?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY) - top)
-      setCurrent(chapterInView(tops, BAR_LINE))
+      setCurrent(chapterInView(tops, BAR_LINE + SETTLE))
     }
     update()
     scroller.addEventListener('scroll', update, { passive: true })

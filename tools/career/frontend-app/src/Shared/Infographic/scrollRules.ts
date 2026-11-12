@@ -20,3 +20,11 @@ export function prefersReducedMotion(): boolean {
 
 // Where the chapter bar's own height ends: a chapter counts as "in view" once its top has passed this line.
 export const BAR_LINE = 96
+
+// Where a sideways strip (the tabs) should scroll so that one item shows fully: the same position when the item is already inside the strip, else the
+// position that centres it, never below 0 and never past the end. Widths in px; `itemLeft` is measured from the start of the scrolled content.
+export function stripScrollFor(scrollLeft: number, viewWidth: number, contentWidth: number, itemLeft: number, itemWidth: number): number {
+  if (itemLeft >= scrollLeft && itemLeft + itemWidth <= scrollLeft + viewWidth) return scrollLeft
+  const centred = itemLeft + itemWidth / 2 - viewWidth / 2
+  return Math.max(0, Math.min(centred, Math.max(0, contentWidth - viewWidth)))
+}

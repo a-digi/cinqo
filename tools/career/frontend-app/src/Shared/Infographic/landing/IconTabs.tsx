@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import { prefersReducedMotion, stripScrollFor } from '../scrollRules'
 import { LANDING } from './landingTokens'
 
 export interface IconTab {
@@ -13,17 +15,33 @@ export interface IconTab {
 // The tab strip under the hero: a line icon over a short label for each chapter. The chapter in view has a pale-grey top and a thick black underline that
 // slides in. It sticks to the top of the scrolling poster and scrolls sideways on a narrow window.
 export function IconTabs({ tabs, current, onGo }: { tabs: IconTab[]; current: number; onGo: (id: string) => void }) {
+  const list = useRef<HTMLUListElement>(null)
+  const items = useRef<(HTMLLIElement | null)[]>([])
+  // On a narrow window the strip scrolls sideways: bring the current tab into view (sideways only, the page itself is not moved).
+  useEffect(() => {
+    const ul = list.current
+    const li = items.current[current]
+    if (!ul || !li) return
+    const left = stripScrollFor(ul.scrollLeft, ul.clientWidth, ul.scrollWidth, li.offsetLeft, li.offsetWidth)
+    if (left !== ul.scrollLeft) ul.scrollTo({ left, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  }, [current])
   return (
     <nav
       aria-label="Chapters"
       className="sticky -top-5 z-10 -mx-6 mb-8 border-b border-gray-200 bg-white/95 px-6 backdrop-blur"
       data-testid="icon-tabs"
     >
-      <ul className="mx-auto flex max-w-6xl justify-start gap-1 overflow-x-auto md:justify-center">
+      <ul ref={list} className="relative mx-auto flex max-w-6xl justify-start gap-1 overflow-x-auto md:justify-center">
         {tabs.map((t, i) => {
           const active = i === current
           return (
-            <li key={t.id} className="shrink-0">
+            <li
+              key={t.id}
+              className="shrink-0"
+              ref={(el) => {
+                items.current[i] = el
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
