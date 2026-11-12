@@ -142,7 +142,10 @@ export const FIELD_SPECS = {
 const bulletCount = (t: string): number => t.split('\n').filter((l) => /^\s*[-•*]\s/.test(l)).length
 
 // What a field says is checked: the kind, the length, the date shape, and for a long text that no bullet point was lost.
-function checkField(spec: FieldSpec, before: string, value: unknown): Verdict<string> {
+function checkField(spec: FieldSpec, before: string, raw: unknown): Verdict<string> {
+  // A small model often writes the lines of a long text as a JSON list of strings (real Phi answers did): for a long text that is read as the lines of one text.
+  const value =
+    spec.kind === 'long' && Array.isArray(raw) && raw.length > 0 && raw.every((l) => typeof l === 'string') ? raw.join('\n') : raw
   if (typeof value !== 'string') return bad(`"${spec.key}" must be text`)
   const t = spec.kind === 'long' ? value.replace(/\r/g, '').trim() : value.replace(/\s+/g, ' ').trim()
   if (t === '') return spec.required ? bad(`"${spec.key}" must not be empty`) : ok('')
@@ -165,7 +168,7 @@ export function fieldsPiece(
 ): Piece<Record<string, string>> {
   const shape = JSON.stringify(Object.fromEntries(specs.map((s) => [s.key, `<${s.key}>`])))
   return {
-    prompt: `${cvExcerpt.trim() === '' ? '' : `${block('The part of the CV this suggestion comes from', clip(cvExcerpt, 3000))}\n`}${block('The suggestion now (JSON)', JSON.stringify(Object.fromEntries(specs.map((s) => [s.key, current[s.key] ?? '']))))}\nThe person's wish: "${wishOf(wish)}"\nGive the suggestion again with the changes the wish asks for. Re-suggesting means offering something different: do not hand back the same wording, and change at least one field. Give several concrete points rather than one: a text with a single sentence or fewer than three bullet points becomes several bullet points (lines starting with "- "), each one task, result or tool the CV mentions; where there are bullet points already, keep every one and add the points the CV supports. Check it against the CV text when the wish is about what the CV says, and add nothing the CV does not say. Keep every field that needs no change exactly as it is. ${languageRule(language)} Dates are YYYY, YYYY-MM or YYYY-MM-DD. Answer with this JSON and nothing else: ${shape}`,
+    prompt: `${cvExcerpt.trim() === '' ? '' : `${block('The part of the CV this suggestion comes from', clip(cvExcerpt, 3000))}\n`}${block('The suggestion now (JSON)', JSON.stringify(Object.fromEntries(specs.map((s) => [s.key, current[s.key] ?? '']))))}\nThe person's wish: "${wishOf(wish)}"\nGive the suggestion again with the changes the wish asks for. Re-suggesting means offering something different: do not hand back the same wording, and change at least one field. Give several concrete points rather than one: a text with a single sentence or fewer than three bullet points becomes several bullet points (lines starting with "- "), each one task, result or tool the CV mentions; where there are bullet points already, keep every one and add the points the CV supports. Check it against the CV text when the wish is about what the CV says, and add nothing the CV does not say. Keep every field that needs no change exactly as it is. ${languageRule(language)} Dates are YYYY, YYYY-MM or YYYY-MM-DD. Every field is ONE JSON string: a text with several lines is one string with \\n between the lines (for example "description":"Introduction\\n- first point\\n- second point"), never a JSON list. Answer with this JSON and nothing else: ${shape}`,
     validate: (parsed) => {
       const o = asObject(parsed)
       if (o === null) return bad(`it must be a JSON object ${shape}`)
