@@ -1911,6 +1911,28 @@ export async function updateCVImportRunSaveSummary(id: string, saveSummary: unkn
   if (!res.ok && res.status !== 204) throw new Error(`failed to update cv import run (${res.status})`)
 }
 
+// Records which section (and which rows) of a run's suggestions a new chat is about, before its first message (plan 268): the server then keeps the AI inside it. Rejects with the
+// server's own sentence (a closed run, an unknown row, a conversation that is already bound).
+export async function recordCVImportSectionChat(params: {
+  runId: string
+  conversationId: string
+  section: string
+  itemIds?: string[]
+}): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/section-chats`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(text !== '' ? text : `failed to record the chat (${String(res.status)})`)
+  }
+  const body = (await res.json()) as { id: string }
+  return body.id
+}
+
 export async function deleteCVImportRun(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/cv-import/runs?id=${encodeURIComponent(id)}`, {
     method: 'DELETE',

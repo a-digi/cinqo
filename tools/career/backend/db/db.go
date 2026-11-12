@@ -662,6 +662,21 @@ CREATE TABLE IF NOT EXISTS cv_import_runs (
     -- every run from before the column). A plain id, not a foreign key: a profile deleted since is then still told apart from "none".
     target_profile_id TEXT
 );
+
+-- cv_import_section_chats (plan 268): the small chat a person opens on the review page to re-suggest one section (or some rows of a list) of this run. The chat is a core
+-- conversation; this row says which run, which section and which rows it is bound to, so the tools can keep the AI inside that scope (the tool learns its conversation from
+-- TOOL_CONVERSATION_ID, which the core sets). section is a single section (profile, persona, personalDetails) or a list (skills, experience, education); item_ids is a JSON
+-- array of row ids of that list, '' for the whole section. A plain conversation id, not a foreign key (the conversation lives in the core's own database).
+CREATE TABLE IF NOT EXISTS cv_import_section_chats (
+    id              TEXT PRIMARY KEY,
+    run_id          TEXT NOT NULL REFERENCES cv_import_runs(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL UNIQUE,
+    section         TEXT NOT NULL CHECK (section IN ('profile','persona','personalDetails','skills','experience','education')),
+    item_ids        TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS cv_import_section_chats_run_idx ON cv_import_section_chats(run_id);
 `
 
 const jobsSchema = `

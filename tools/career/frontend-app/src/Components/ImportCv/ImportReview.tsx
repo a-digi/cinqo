@@ -25,6 +25,19 @@ import {
   rowKey,
   type ReviewState,
 } from './reviewRules'
+import { ResuggestButton } from './Resuggest/ResuggestButton'
+import { ResuggestDialog } from './Resuggest/ResuggestDialog'
+import {
+  BUSY_HINT,
+  SECTION_TITLES,
+  rowScope,
+  sectionScope,
+  showRowButton,
+  showSectionButton,
+  type ResuggestPageState,
+  type ResuggestScope,
+  type ResuggestSection,
+} from './Resuggest/resuggestRules'
 import { experienceLabel } from './experienceLabel'
 import { educationLabel } from './educationInsertRules'
 
@@ -92,6 +105,11 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   const [insertNotes, setInsertNotes] = useState<Record<string, string>>({})
   const [inserting, setInserting] = useState(false)
   const [insertValidationError, setInsertValidationError] = useState('')
+  // Re-suggest (plan 268): the chat that is open (null: none), whether one of its turns is running (Insert is off meanwhile), and whether something was saved from this review
+  // (the suggestions are then closed to the AI, so the buttons go).
+  const [resuggest, setResuggest] = useState<ResuggestScope | null>(null)
+  const [turnBusy, setTurnBusy] = useState(false)
+  const [saveRecorded, setSaveRecorded] = useState(false)
 
   // The latest of everything the poll needs, so the timer never works on a stale copy.
   const latest = useRef({ proposal, revision: shown.revision, checked, insertedKeys, insertErrors, insertNotes, inserting })
@@ -124,30 +142,37 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     return merged.state
   }
 
+  // Looks at the run once: when the AI changed the suggestions since the page last looked, they are merged in. The timer does it every few seconds; the Re-suggest dialog does it
+  // at once when a turn ends (`manual`, which also looks while the page is hidden).
+  function checkNow(manual: boolean): Promise<void> {
+    const cur = latest.current
+    if (cur.inserting || !cur.proposal || (!manual && typeof document !== 'undefined' && document.visibilityState === 'hidden'))
+      return Promise.resolve()
+    return fetchCVImportRun(run.id)
+      .then((fresh) => {
+        const now = latest.current
+        if (fresh?.revision === undefined || fresh.revision === now.revision || now.inserting) return
+        let next: CVImportProposal
+        try {
+          next = parseProposal(fresh.aiProposal)
+        } catch {
+          return
+        }
+        applyNewer(next, fresh.revision, {
+          checked: now.checked,
+          insertedKeys: now.insertedKeys,
+          insertErrors: now.insertErrors,
+          insertNotes: now.insertNotes,
+        })
+      })
+      .catch(() => undefined)
+  }
+
   useEffect(() => {
     // An older server gives no revision: nothing to compare, nothing to watch.
     if (run.revision === undefined) return
     const timer = setInterval(() => {
-      const cur = latest.current
-      if (cur.inserting || !cur.proposal || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
-      fetchCVImportRun(run.id)
-        .then((fresh) => {
-          const now = latest.current
-          if (fresh?.revision === undefined || fresh.revision === now.revision || now.inserting) return
-          let next: CVImportProposal
-          try {
-            next = parseProposal(fresh.aiProposal)
-          } catch {
-            return
-          }
-          applyNewer(next, fresh.revision, {
-            checked: now.checked,
-            insertedKeys: now.insertedKeys,
-            insertErrors: now.insertErrors,
-            insertNotes: now.insertNotes,
-          })
-        })
-        .catch(() => undefined)
+      void checkNow(false)
     }, SUGGESTIONS_POLL_MS)
     return () => {
       clearInterval(timer)
@@ -285,6 +310,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       setInsertErrors(nextInsertErrors)
 
       const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors, nextNotes)
+      setSaveRecorded(true)
       updateCVImportRunSaveSummary(run.id, summary, shown.revision).catch(async (err: unknown) => {
         // The AI changed the suggestions between the person's reading and the save (plan 257): read them again, keep what was inserted by row, and record the summary for the new version.
         // Any other failure is non-fatal: the insert already succeeded; losing the history record of it must not error the user's own review.
@@ -315,6 +341,28 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
 
   // plan/ai/tools/career/step-167: the Insert button is there while something ticked is still to insert, gone once it is all saved.
   const insert = insertState(checkedNow, insertedKeys, insertErrors, inserting)
+  // Re-suggest (plan 268): the buttons of the section cards and of the rows of the lists.
+  const page: ResuggestPageState = { targetChosen: targetId !== '', savedAnything: saveRecorded, busy: turnBusy }
+  const sectionButton = (section: ResuggestSection): React.ReactNode =>
+    showSectionButton(section, page) ? (
+      <ResuggestButton
+        ariaLabel={`Re-suggest ${SECTION_TITLES[section]}`}
+        onClick={() => {
+          setResuggest(sectionScope(section))
+        }}
+      />
+    ) : null
+  const rowButton = (section: ResuggestSection, item: { id?: string }, key: string, label: string): React.ReactNode =>
+    showRowButton(section, { id: item.id, done: insertedKeys[key] }, page) ? (
+      <ResuggestButton
+        compact
+        ariaLabel={`Re-suggest ${label}`}
+        onClick={() => {
+          setResuggest(rowScope(section, item.id ?? '', label))
+        }}
+      />
+    ) : undefined
+
   const stages = pipelineStages({
     state: 'review',
     uploadError: false,
@@ -383,7 +431,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           </section>
         ) : (
           <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
+            <SectionHead title="Profile" button={sectionButton('profile')} />
             <ProposalRow
               item={proposal.profile}
               label={proposal.profile.name || '(no name proposed)'}
@@ -402,7 +450,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         )}
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Target roles</h2>
+          <SectionHead title="Target roles" button={sectionButton('persona')} />
           <ProposalRow
             item={proposal.persona}
             label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no target role proposed)'}
@@ -434,7 +482,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </section>
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
+          <SectionHead title="Personal Details" button={sectionButton('personalDetails')} />
           <ProposalRow
             item={proposal.personalDetails}
             label={proposal.personalDetails.headline || '(no headline proposed)'}
@@ -449,7 +497,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </section>
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
+          <SectionHead title="Skills" button={sectionButton('skills')} />
           {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
           <div className="space-y-1">
             {proposal.skills.map((skill, i) => {
@@ -467,6 +515,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                   done={insertedKeys[key]}
                   errorMessage={insertErrors[key]}
                   badge={badges[key]}
+                  action={rowButton('skills', skill, key, skill.value)}
                 />
               )
             })}
@@ -474,7 +523,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </section>
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
+          <SectionHead title="Experience" button={sectionButton('experience')} />
           {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
           <div className="space-y-1">
             {proposal.experience.map((exp, i) => {
@@ -493,6 +542,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                   done={insertedKeys[key]}
                   errorMessage={insertErrors[key]}
                   badge={badges[key]}
+                  action={rowButton('experience', exp, key, experienceLabel(exp))}
                 />
               )
             })}
@@ -500,7 +550,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </section>
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Education</h2>
+          <SectionHead title="Education" button={sectionButton('education')} />
           {proposal.education.length === 0 && <p className="text-sm text-gray-400">No education proposed.</p>}
           <div className="space-y-1">
             {proposal.education.map((edu, i) => {
@@ -519,6 +569,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                   doneNote={insertNotes[key]}
                   errorMessage={insertErrors[key]}
                   badge={badges[key]}
+                  action={rowButton('education', edu, key, educationLabel(edu))}
                 />
               )
             })}
@@ -543,13 +594,18 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
             </p>
           ) : (
             <>
+              {turnBusy && (
+                <p data-testid="resuggest-busy-hint" className="mb-2 text-xs text-blue-700">
+                  {BUSY_HINT}
+                </p>
+              )}
               {insert.view === 'disabled' && <p className="mb-2 text-xs text-gray-500">Tick at least one row to insert it.</p>}
               <button
                 type="button"
                 onClick={() => {
                   void handleInsert()
                 }}
-                disabled={inserting || insert.view === 'disabled' || targetBlocked}
+                disabled={inserting || insert.view === 'disabled' || targetBlocked || turnBusy}
                 className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {inserting ? 'Inserting…' : insert.failedCount > 0 ? 'Insert again' : 'Insert'}
@@ -558,6 +614,27 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
           )}
         </section>
       </div>
+      {resuggest && (
+        <ResuggestDialog
+          run={{ id: run.id, mediaFileId: run.mediaFileId, originalFilename: run.originalFilename }}
+          scope={resuggest}
+          onClose={() => {
+            setResuggest(null)
+          }}
+          onTurnEnd={() => checkNow(true)}
+          onBusyChange={setTurnBusy}
+        />
+      )}
+    </div>
+  )
+}
+
+// A card's heading with, at its right, the Re-suggest button when there is one.
+function SectionHead({ title, button }: { title: string; button: React.ReactNode }) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-3">
+      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+      {button}
     </div>
   )
 }

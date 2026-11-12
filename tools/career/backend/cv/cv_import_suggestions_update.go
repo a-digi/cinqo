@@ -332,13 +332,13 @@ func RegisterUpdateCvImportSuggestions(server *mcp.Server) {
 			"add a suggestion or remove one. First read them with get_cv_import_suggestions (it gives every row's id and the revision) and pass that revision as basedOn. " +
 			"All the operations of one call are applied together or not at all, and they must follow the same rules as the original suggestions (each row has an action, insert or skip, " +
 			"limits, dates). Once the user has saved from the import (or declined it) the suggestions are closed and cannot be changed. This only edits the suggestions the user reviews on the Import page: it saves nothing to the profile, " +
-			"and you must never say that something was saved; the user saves on the Import page. Afterwards tell the user in one or two sentences what you changed.",
+			"and you must never say that something was saved; the user saves on the Import page. A chat that is about one section (or some rows) can only change that, and a call that reaches outside it is refused as a whole. Afterwards tell the user in one or two sentences what you changed.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateSuggestionsArgs) (*mcp.CallToolResult, any, error) {
 		runID := strings.TrimSpace(args.RunID)
 		if runID == "" {
 			return db.ErrResult("runId is required: the id of the CV import run, a UUID"), nil, nil
 		}
-		out, err := ChangeSuggestions(runID, args.Changes, args.BasedOn)
+		out, err := ChangeSuggestionsIn(callerConversation(), runID, args.Changes, args.BasedOn)
 		switch {
 		case errors.Is(err, errUnknownCVImportRun):
 			return db.ErrResult(fmt.Sprintf("unknown CV import run id %q", runID)), nil, nil

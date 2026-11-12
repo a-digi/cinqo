@@ -272,7 +272,9 @@ func GetSuggestions(runID string) (Suggestions, error) {
 }
 
 type getSuggestionsArgs struct {
-	RunID string `json:"runId" jsonschema:"the id of the CV import run (a UUID): it is in the first message of the import chat, after the word runId"`
+	RunID   string   `json:"runId" jsonschema:"the id of the CV import run (a UUID): it is in the first message of the import chat, after the word runId"`
+	Section string   `json:"section,omitempty" jsonschema:"optional: read only this part: profile, persona, personalDetails, skills, experience or education (a chat about one section can only read that one)"`
+	IDs     []string `json:"ids,omitempty" jsonschema:"optional, with section skills, experience or education: read only the rows with these ids"`
 }
 
 // RegisterGetCvImportSuggestions adds get_cv_import_suggestions.
@@ -282,13 +284,13 @@ func RegisterGetCvImportSuggestions(server *mcp.Server) {
 		Description: "Read the suggestions of a CV import, the ones the user reviews on the Import page: the profile, the persona, the personal details, the skills, the jobs and the education, " +
 			"each with its action (insert or skip), its fields, its own id (for the tool that changes them) and its state: pending (not saved to the profile yet), saved or failed. " +
 			"Use it when the user wants to talk about the suggestions of an import. Pass the run's id (a UUID: it is in the first message of the import chat, after the word runId). " +
-			"The answer also holds a revision. It only reads; nothing is saved to the profile by it. Fails when the run is unknown, still being analysed, failed or has no suggestions.",
+			"The answer also holds a revision. Give a section (and, for a list, row ids) to read only that part: shorter, and the only thing a chat about one section can read. It only reads; nothing is saved to the profile by it. Fails when the run is unknown, still being analysed, failed or has no suggestions.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getSuggestionsArgs) (*mcp.CallToolResult, any, error) {
 		runID := strings.TrimSpace(args.RunID)
 		if runID == "" {
 			return db.ErrResult("runId is required: the id of the CV import run, a UUID"), nil, nil
 		}
-		s, err := GetSuggestions(runID)
+		s, err := GetSuggestionsIn(callerConversation(), runID, args.Section, args.IDs)
 		switch {
 		case errors.Is(err, errUnknownCVImportRun):
 			return db.ErrResult(fmt.Sprintf("unknown CV import run id %q", runID)), nil, nil

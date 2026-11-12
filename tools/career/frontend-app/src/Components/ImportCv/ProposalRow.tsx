@@ -25,6 +25,7 @@ export function ProposalRow({
   doneNote,
   detail,
   badge,
+  action,
 }: {
   item: ProposalItem
   label: string
@@ -52,33 +53,45 @@ export function ProposalRow({
   detail?: string
   // The AI changed the suggestions in the chat (plan 257): this row is new, or was changed, since the person last looked.
   badge?: 'new' | 'changed'
+  // A button at the right of the row, outside the tick's label (plan 268: Re-suggest this row).
+  action?: React.ReactNode
 }) {
   const tone = proposalRowTone(item)
+  const rowLabel = (
+    <label
+      className={`${action !== undefined ? 'min-w-0 flex-1 ' : ''}flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${done ? 'cursor-default border-green-200 bg-green-50' : `cursor-pointer ${toneClasses[tone]}`}`}
+    >
+      <input type="checkbox" checked={done || checked} disabled={done} onChange={onToggle} className="mt-0.5" />
+      <span>
+        <span className="block text-gray-900">
+          {label}
+          {badge && !done && (
+            <span
+              data-testid={`row-badge-${badge}`}
+              className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-medium text-blue-800"
+            >
+              {badge === 'new' ? 'New' : 'Changed'}
+            </span>
+          )}
+        </span>
+        {item.possibleDuplicateOf !== null && !done && (
+          <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
+        )}
+        {done && <span className="block text-xs text-green-700">{doneNote ? `Not added: ${doneNote}` : 'Inserted'}</span>}
+        {errorMessage && !done && <span className="block text-xs text-red-700">Failed: {errorMessage}</span>}
+      </span>
+    </label>
+  )
   return (
     <div>
-      <label
-        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${done ? 'cursor-default border-green-200 bg-green-50' : `cursor-pointer ${toneClasses[tone]}`}`}
-      >
-        <input type="checkbox" checked={done || checked} disabled={done} onChange={onToggle} className="mt-0.5" />
-        <span>
-          <span className="block text-gray-900">
-            {label}
-            {badge && !done && (
-              <span
-                data-testid={`row-badge-${badge}`}
-                className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 align-middle text-xs font-medium text-blue-800"
-              >
-                {badge === 'new' ? 'New' : 'Changed'}
-              </span>
-            )}
-          </span>
-          {item.possibleDuplicateOf !== null && !done && (
-            <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
-          )}
-          {done && <span className="block text-xs text-green-700">{doneNote ? `Not added: ${doneNote}` : 'Inserted'}</span>}
-          {errorMessage && !done && <span className="block text-xs text-red-700">Failed: {errorMessage}</span>}
-        </span>
-      </label>
+      {action !== undefined ? (
+        <div className="flex items-start gap-2">
+          {rowLabel}
+          <div className="shrink-0 pt-1.5">{action}</div>
+        </div>
+      ) : (
+        rowLabel
+      )}
       {detail !== undefined && <DescriptionDetails description={detail} />}
     </div>
   )
