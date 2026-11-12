@@ -15,4 +15,11 @@ export const LANDING = {
   muted: '#5b6070',
 } as const
 
+// The colour of one chapter: a gradient for the icon chip, a pale tint for the tile. The tool's own palette (jobsTheme) fits it structurally.
+export interface LandingAccent {
+  from: string
+  to: string
+  soft: string
+}
+
 export type LandingTone = 'dark' | 'light'

@@ -18,6 +18,7 @@ import {
   RuleFrame,
   ScoreFrame,
 } from './diagrams'
+import { accentOfChapter } from './infoTheme'
 import { iconFor, tabIconFor } from './tabIcons'
 import { CHAPTERS, type Chapter, type ChapterId } from './profileInfoData'
 import { FAQ_TITLE, LANDING_HERO, SECTIONS, SERVICE_CARDS, captionIcon, faqItems } from './profileLandingData'
@@ -72,6 +73,7 @@ export function ProfileInfoModal({ open, onClose, facts }: { open: boolean; onCl
         id: s.id,
         label: s.tab,
         icon: tabIconFor(s.icon),
+        color: accentOfChapter(s.id).to,
         badge: s.id === 'first-steps' ? `${String(progress.done)}/${String(progress.total)}` : null,
       }))}
       sections={SECTIONS.map((s) => ({ id: s.id, title: chapterOf(s.id).title }))}
@@ -137,6 +139,7 @@ export function ProfileInfoModal({ open, onClose, facts }: { open: boolean; onCl
             <Tile
               variant={layout.lead === 'wide' ? 'wide' : 'half'}
               icon={iconFor(layout.icon, 'h-6 w-6')}
+              accent={accentOfChapter(layout.id)}
               titleId={`${ID_PREFIX}-${id}-title`}
               title={chapter.title}
               text={chapter.promise}
@@ -164,6 +167,7 @@ export function ProfileInfoModal({ open, onClose, facts }: { open: boolean; onCl
                         text={cap.text}
                         delay={i % 2}
                         icon={iconFor(captionIcon(id, cap.title), 'h-6 w-6')}
+                        accent={accentOfChapter(layout.id)}
                         picture={variant === 'tall' ? i === 0 ? <ScoreFrame /> : <RuleFrame /> : undefined}
                       />
                     </div>

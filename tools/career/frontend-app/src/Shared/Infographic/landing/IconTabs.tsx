@@ -6,6 +6,8 @@ export interface IconTab {
   icon: React.ReactNode
   // A small figure on the tab ("3/4"), or null.
   badge?: string | null
+  // The chapter's colour: the icon and the underline take it while the tab is current.
+  color?: string
 }
 
 // The tab strip under the hero: a line icon over a short label for each chapter. The chapter in view has a pale-grey top and a thick black underline that
@@ -31,7 +33,11 @@ export function IconTabs({ tabs, current, onGo }: { tabs: IconTab[]; current: nu
                 className="relative flex w-24 flex-col items-center gap-1.5 px-2 pb-3 pt-3 text-xs font-semibold transition-colors hover:bg-gray-50 motion-reduce:transition-none md:w-28"
                 style={{ background: active ? LANDING.tile : undefined, color: LANDING.ink }}
               >
-                <span className="h-7 w-7" aria-hidden="true">
+                <span
+                  className={`h-7 w-7 transition-colors motion-reduce:transition-none ${active ? 'landing-bob' : ''}`}
+                  style={{ color: active && t.color ? t.color : undefined }}
+                  aria-hidden="true"
+                >
                   {t.icon}
                 </span>
                 <span>
@@ -44,7 +50,7 @@ export function IconTabs({ tabs, current, onGo }: { tabs: IconTab[]; current: nu
                   data-testid={`tab-underline-${t.id}`}
                   aria-hidden="true"
                   className="absolute inset-x-0 bottom-0 h-[3px] origin-left transition-transform duration-300 motion-reduce:transition-none"
-                  style={{ background: LANDING.ink, transform: active ? 'scaleX(1)' : 'scaleX(0)' }}
+                  style={{ background: t.color ?? LANDING.ink, transform: active ? 'scaleX(1)' : 'scaleX(0)' }}
                 />
               </button>
             </li>

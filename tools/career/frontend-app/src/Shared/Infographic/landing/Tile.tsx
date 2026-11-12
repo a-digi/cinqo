@@ -1,5 +1,5 @@
 import { Reveal } from '../Reveal'
-import { LANDING } from './landingTokens'
+import { LANDING, type LandingAccent } from './landingTokens'
 
 export type TileVariant = 'wide' | 'half' | 'tall'
 
@@ -15,6 +15,7 @@ export function Tile({
   picture,
   delay = 0,
   icon,
+  accent,
 }: {
   variant?: TileVariant
   // The id of the heading, so the section around can be named by it.
@@ -26,6 +27,8 @@ export function Tile({
   delay?: number
   // A line icon shown in a round dark chip above the heading.
   icon?: React.ReactNode
+  // The chapter's colour: tints the tile, colours the icon chip and draws a bar along the top.
+  accent?: LandingAccent
 }) {
   const wide = variant === 'wide'
   return (
@@ -36,8 +39,22 @@ export function Tile({
         className={`relative h-full overflow-hidden rounded-[1.25rem] p-6 transition-transform hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0 md:p-10 ${
           wide ? 'grid items-center gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]' : 'flex flex-col gap-6'
         } ${variant === 'tall' ? 'md:min-h-[26rem]' : ''}`}
-        style={{ background: LANDING.tile, color: LANDING.ink }}
+        style={
+          {
+            background: accent ? `linear-gradient(160deg, ${accent.soft} 0%, ${LANDING.tile} 70%)` : LANDING.tile,
+            color: LANDING.ink,
+            '--accent': accent?.from ?? LANDING.ink,
+          } as React.CSSProperties
+        }
       >
+        {accent && (
+          <span
+            data-testid="tile-bar"
+            aria-hidden="true"
+            className="landing-bar absolute inset-x-0 top-0 h-1.5"
+            style={{ background: `linear-gradient(90deg, ${accent.from}, ${accent.to})` }}
+          />
+        )}
         {variant === 'tall' && (
           <span
             data-testid="tile-diagonal"
@@ -51,8 +68,11 @@ export function Tile({
             <span
               data-testid="tile-icon"
               aria-hidden="true"
-              className="landing-chip mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl text-white"
-              style={{ background: LANDING.ink }}
+              className="landing-chip relative mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl text-white"
+              style={{
+                background: accent ? `linear-gradient(135deg, ${accent.from}, ${accent.to})` : LANDING.ink,
+                boxShadow: accent ? `0 8px 18px -6px ${accent.to}` : undefined,
+              }}
             >
               {icon}
             </span>

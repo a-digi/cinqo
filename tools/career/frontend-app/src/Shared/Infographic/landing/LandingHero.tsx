@@ -35,13 +35,30 @@ export function LandingHero({
       )}
       <div className="relative mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div className="min-w-0">
-          <h2 id={titleId} className="landing-hero-in text-5xl font-black leading-[1.05] tracking-tight md:text-7xl" style={{ '--i': 0 } as React.CSSProperties}>
+          <h2
+            id={titleId}
+            className="landing-hero-in text-5xl font-black leading-[1.05] tracking-tight md:text-7xl"
+            style={{ '--i': 0 } as React.CSSProperties}
+          >
             {title}
           </h2>
-          <p className="landing-hero-in mt-5 max-w-xl text-base leading-relaxed text-white/80 md:text-lg" style={{ '--i': 1 } as React.CSSProperties}>{lead}</p>
-          {actions !== undefined && <div className="landing-hero-in mt-7 flex flex-wrap items-center gap-3" style={{ '--i': 2 } as React.CSSProperties}>{actions}</div>}
+          <p
+            className="landing-hero-in mt-5 max-w-xl text-base leading-relaxed text-white/80 md:text-lg"
+            style={{ '--i': 1 } as React.CSSProperties}
+          >
+            {lead}
+          </p>
+          {actions !== undefined && (
+            <div className="landing-hero-in mt-7 flex flex-wrap items-center gap-3" style={{ '--i': 2 } as React.CSSProperties}>
+              {actions}
+            </div>
+          )}
         </div>
-        {picture !== undefined && <div className="landing-hero-in relative min-w-0" style={{ '--i': 3 } as React.CSSProperties}>{picture}</div>}
+        {picture !== undefined && (
+          <div className="landing-hero-in relative min-w-0" style={{ '--i': 3 } as React.CSSProperties}>
+            {picture}
+          </div>
+        )}
       </div>
     </header>
   )
