@@ -100,6 +100,8 @@ func TestASuggestionIsRefusedWithASentenceTheAICanActOn(t *testing.T) {
 		{"a title over one line", w.run, KindExperience, w.expID, FieldTitle, "Senior\nDeveloper", "one line"},
 		{"a title that is too long", w.run, KindExperience, w.expID, FieldTitle, strings.Repeat("x", 201), "one line"},
 		{"a bullet point dropped", w.run, KindExperience, w.expID, FieldDescription, "Intro\n- wrote Go and fixed bugs", "bullet"},
+		{"a bullet point added", w.run, KindExperience, w.expID, FieldDescription, "Introduction\n- wrote clean Go\n- fixed many bugs\n- new extra bullet", "keep exactly the same number"},
+		{"the intro line turned into a bullet", w.run, KindExperience, w.expID, FieldDescription, "- Introduction\n- wrote clean Go\n- fixed many bugs", "keep exactly the same number"},
 	}
 	for _, c := range cases {
 		_, err := AddSuggestion(c.run, c.kind, c.item, c.field, c.text, "")
@@ -128,10 +130,14 @@ func TestTheLimitsAreInclusive(t *testing.T) {
 	}
 }
 
-func TestABulletPointMayBeReworded(t *testing.T) {
+func TestABulletPointMayBeRewordedButTheirNumberStays(t *testing.T) {
 	w := newWorld(t)
-	if _, err := AddSuggestion(w.run, KindExperience, w.expID, FieldDescription, "Introduction\n- wrote clean Go\n- fixed many bugs\n- new extra bullet", "better"); err != nil {
-		t.Errorf("the same number of bullets or more is fine: %v", err)
+	if _, err := AddSuggestion(w.run, KindExperience, w.expID, FieldDescription, "Introduction\n- wrote clean Go\n- fixed many bugs", "better"); err != nil {
+		t.Errorf("the same number of bullets, reworded: %v", err)
+	}
+	// a text without bullets gets none either
+	if _, err := AddSuggestion(w.run, KindHobby, w.hobbyID, FieldDescription, "plays in a chess club\n- and at tournaments", ""); !errors.Is(err, ErrInvalid) || !strings.Contains(err.Error(), "the text has 1 bullet points") {
+		t.Errorf("a bullet added to a text without any: %v", err)
 	}
 }
 
@@ -229,7 +235,7 @@ func TestTheToolsOverARealMCPSession(t *testing.T) {
 	names := []string{}
 	for _, tl := range list.Tools {
 		names = append(names, tl.Name)
-		if tl.Name == "suggest_optimization" && (!strings.Contains(tl.Description, "changes nothing") || !strings.Contains(tl.Description, "bullet")) {
+		if tl.Name == "suggest_optimization" && (!strings.Contains(tl.Description, "changes nothing") || !strings.Contains(tl.Description, "exactly the same number of bullet points")) {
 			t.Errorf("description: %s", tl.Description)
 		}
 	}
@@ -347,5 +353,8 @@ func TestIndentedBulletPointsCountToo(t *testing.T) {
 	}
 	if _, err := AddSuggestion(w.run, KindExperience, w.expID, FieldDescription, "Introduction\n  - one\n- two", ""); err != nil {
 		t.Errorf("keeping both: %v", err)
+	}
+	if _, err := AddSuggestion(w.run, KindExperience, w.expID, FieldDescription, "Introduction\n  - one\n- two\n- three", ""); !errors.Is(err, ErrInvalid) {
+		t.Errorf("adding one: %v", err)
 	}
 }

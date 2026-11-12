@@ -38,6 +38,14 @@ export function OptimizeWithAi({
   const state = optimizeView(runs.runs)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  // The review gives the focus back to the button that opened it, but that button is replaced when the last suggestion is decided ("Review suggestions" becomes "Optimize with AI"):
+  // once the review has closed, the focus goes to the main button of the panel.
+  const panel = useRef<HTMLDivElement>(null)
+  const reviewWasOpen = useRef(false)
+  useEffect(() => {
+    if (reviewWasOpen.current && !reviewOpen) panel.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+    reviewWasOpen.current = reviewOpen
+  }, [reviewOpen])
   const [focus, setFocus] = useState('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
@@ -115,7 +123,7 @@ export function OptimizeWithAi({
           : ''
 
   return (
-    <div data-testid="optimize-with-ai" className="flex flex-col items-end gap-1.5">
+    <div ref={panel} data-testid="optimize-with-ai" className="flex flex-col items-end gap-1.5">
       <div className="flex flex-wrap items-center justify-end gap-2">
         {state.view === 'review' ? (
           <button

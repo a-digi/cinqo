@@ -31,7 +31,7 @@ export function buildLocalPrompt(t: { field: string; label: string; context?: st
     `Improve the wording of this ${FIELD_WORDS[t.field] ?? 'text'}${t.label ? ` (${t.label}${t.context ? `, ${t.context}` : ''})` : ''}.`,
     ...languageLines(t.text),
     'Rules: keep the language of the text. Keep every fact, number, percentage, name, date and technology. Add nothing the text does not say. Fix typos and grammar and make clumsy or wordy sentences read well.',
-    'Keep the line breaks. Every line that starts with "- " must stay a line that starts with "- ": never drop a bullet point and never merge several into one.',
+    'Keep the line breaks. Every line that starts with "- " must stay a line that starts with "- ", and a line that does not start with "- " must stay one: never drop a bullet point, never merge several into one and never turn another line into a bullet point.',
     ...(wanted ? [`The person asked for this (a wish about the wording only): ${JSON.stringify(wanted)}`] : []),
     'Reply with ONLY the improved text. No introduction, no explanation, no quotes around it, no markdown.',
     '',
@@ -68,14 +68,17 @@ export function bulletLines(text: string): number {
 
 export type Verdict = { ok: true; text: string } | { ok: false; reason: string }
 
-// The checks of an answer: the same rules the server applies (not empty, changed, not too long, no bullet point lost) and two that catch a small model's usual faults (a text cut short, a text grown into an essay).
+// The checks of an answer: the same rules the server applies (not empty, changed, not too long, exactly as many bullet points) and two that catch a small model's usual faults (a text cut short, a text grown into an essay).
 export function checkAnswer(before: string, answer: string): Verdict {
   const text = cleanAnswer(answer, before)
   if (text === '') return { ok: false, reason: 'the answer was empty' }
   if (text === before.trim()) return { ok: false, reason: 'the answer is the same as the text' }
   if (text.length > MAX_TEXT) return { ok: false, reason: `the answer is longer than ${String(MAX_TEXT)} characters` }
-  if (bulletLines(text) < bulletLines(before))
-    return { ok: false, reason: 'a bullet point was dropped or merged: keep every line that starts with "- "' }
+  if (bulletLines(text) !== bulletLines(before))
+    return {
+      ok: false,
+      reason: `the answer has ${String(bulletLines(text))} lines that start with "- " and the text has ${String(bulletLines(before))}: keep exactly the same number: never drop, merge or add a bullet point, and keep a line that is not a bullet point as it is`,
+    }
   const want = detectLanguage(before)
   const got = detectLanguage(text)
   if (want && got && want !== got) {
