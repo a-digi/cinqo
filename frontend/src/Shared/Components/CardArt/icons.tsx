@@ -1,6 +1,22 @@
 // The icon set shared by the dashboard cards and the tool cards.
 export type WidgetIcon =
-  'tools' | 'updates' | 'chat' | 'media' | 'briefcase' | 'globe' | 'chart' | 'list' | 'number' | 'puzzle' | 'document' | 'server' | 'layers'
+  | 'tools'
+  | 'updates'
+  | 'chat'
+  | 'media'
+  | 'briefcase'
+  | 'globe'
+  | 'chart'
+  | 'list'
+  | 'number'
+  | 'puzzle'
+  | 'document'
+  | 'server'
+  | 'layers'
+  | 'alert'
+  | 'chip'
+  | 'shield-check'
+  | 'clock'
 
 // Stroke icons drawn in the current colour, 24x24.
 const paths: Record<WidgetIcon, React.ReactNode> = {
@@ -52,6 +68,32 @@ const paths: Record<WidgetIcon, React.ReactNode> = {
     <>
       <path d="M12 3.5 3.5 8 12 12.5 20.5 8z" />
       <path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5" />
+    </>
+  ),
+  // Added for the unexpected stops (plan 259): a warning, a processor, a shield with a check, a clock.
+  alert: (
+    <>
+      <path d="M12 3.5 21 19H3L12 3.5z" />
+      <path d="M12 10v4.2M12 16.9v.1" />
+    </>
+  ),
+  chip: (
+    <>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="2.5" />
+      <rect x="10" y="10" width="4" height="4" rx="0.8" />
+      <path d="M9.5 3.5v3M14.5 3.5v3M9.5 17.5v3M14.5 17.5v3M3.5 9.5h3M3.5 14.5h3M17.5 9.5h3M17.5 14.5h3" />
+    </>
+  ),
+  'shield-check': (
+    <>
+      <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.3-7 9-4.1-1.7-7-4.8-7-9V6l7-2.5z" />
+      <path d="m8.8 12 2.4 2.4 4-4.4" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
     </>
   ),
 }

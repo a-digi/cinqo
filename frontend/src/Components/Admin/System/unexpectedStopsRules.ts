@@ -48,3 +48,32 @@ export function countsLine(total: number, unseen: number | null): string {
   const noun = total === 1 ? 'stop' : 'stops'
   return `${String(total)} ${noun}${unseen !== null && unseen > 0 ? `, ${String(unseen)} new` : ''}`
 }
+
+// How long ago: "just now", "12 minutes ago", "3 hours ago", "yesterday", "5 days ago"; after two weeks the date. A time in the future (a clock that is off) is "just now".
+export function relativeTime(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const seconds = Math.floor((now.getTime() - d.getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${String(minutes)} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${String(hours)} ${hours === 1 ? 'hour' : 'hours'} ago`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return 'yesterday'
+  if (days < 15) return `${String(days)} days ago`
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+// How a kind of stop looks: its colour and its icon. A kind this page does not know is amber with the warning.
+export function kindLook(kind: string): { accent: 'rose' | 'violet' | 'amber'; icon: 'alert' | 'chip' } {
+  if (kind === 'local_ai_stopped') return { accent: 'violet', icon: 'chip' }
+  if (kind === 'app_unclean_exit') return { accent: 'rose', icon: 'alert' }
+  return { accent: 'amber', icon: 'alert' }
+}
+
+// The tile "latest new stop": how long ago the newest stop that is not seen was, or that there is none.
+export function latestNewText(latest: { at: string } | undefined, now: Date = new Date()): string {
+  if (latest === undefined) return 'Everything is seen'
+  return relativeTime(latest.at, now) || formatDateTime(latest.at)
+}

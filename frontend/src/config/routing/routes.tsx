@@ -18,6 +18,7 @@ import { HomePage } from '../../Components/Home/HomePage'
 import { MediaListPage } from '../../Components/Admin/Media/MediaListPage'
 import { ToolRouteOutlet } from '../../Components/Tools/ToolRouteOutlet'
 import { ToolLogReaderPage } from '../../Components/FileReader/ToolLogReaderPage'
+import { UnexpectedStopPage } from '../../Components/Admin/System/UnexpectedStopPage'
 import { UnexpectedStopsPage } from '../../Components/Admin/System/UnexpectedStopsPage'
 import { AppScopes } from '../security/scopes'
 import { UNEXPECTED_STOPS_PATH } from './systemPaths'
@@ -38,11 +39,19 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <HomePage /> },
           {
-            // plan 259: the unexpected stops; the page of one stop (its UUID in the address) comes in step 4
+            // plan 259: the unexpected stops, and the page of one stop (its UUID in the address)
             path: UNEXPECTED_STOPS_PATH,
             element: (
               <AuthGuard scopes={[AppScopes.SystemRead]}>
                 <UnexpectedStopsPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: `${UNEXPECTED_STOPS_PATH}/:id`,
+            element: (
+              <AuthGuard scopes={[AppScopes.SystemRead]}>
+                <UnexpectedStopPage />
               </AuthGuard>
             ),
           },

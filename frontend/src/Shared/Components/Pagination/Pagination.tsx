@@ -10,6 +10,7 @@ export function Pagination({
   onPageSizeChange,
   pageSizes = DEFAULT_PAGE_SIZES,
   label = 'Pagination',
+  accent,
 }: {
   page: number
   pageSize: number
@@ -18,6 +19,8 @@ export function Pagination({
   onPageSizeChange?: (size: number) => void
   pageSizes?: readonly number[]
   label?: string
+  // The colours of the current page's button (a gradient); slate when left out.
+  accent?: { from: string; to: string }
 }) {
   const last = totalPages(total, pageSize)
   const base = 'inline-flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-xs font-medium transition-colors'
@@ -72,7 +75,8 @@ export function Pagination({
                   onClick={() => {
                     if (item !== page) onPageChange(item)
                   }}
-                  className={`${base} ${item === page ? 'bg-slate-800 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  className={`${base} ${item === page ? `text-white shadow-sm ${accent ? '' : 'bg-slate-800'}` : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  style={item === page && accent ? { background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` } : undefined}
                 >
                   {item}
                 </button>
