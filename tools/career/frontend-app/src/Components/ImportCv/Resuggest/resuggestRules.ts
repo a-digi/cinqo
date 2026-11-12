@@ -28,8 +28,26 @@ export interface ResuggestScope {
   label: string
 }
 
-export function sectionScope(section: ResuggestSection): ResuggestScope {
-  return { section, itemIds: [], label: '' }
+export function sectionScope(section: ResuggestSection, label = ''): ResuggestScope {
+  return { section, itemIds: [], label }
+}
+
+const NOUNS: Record<'skills' | 'experience' | 'education', [string, string]> = {
+  skills: ['skill', 'skills'],
+  experience: ['job', 'jobs'],
+  education: ['entry', 'entries'],
+}
+
+// What the whole-section button and the dialog's chip call a list: "All 4 jobs". Empty for a single section and for a list with fewer than two rows (one row is the row's own button).
+export function wholeLabel(section: ResuggestSection, count: number): string {
+  if (!isListSection(section) || count < 2) return ''
+  const [, many] = NOUNS[section as 'skills' | 'experience' | 'education']
+  return `All ${String(count)} ${many}`
+}
+
+// The text of a section's button: "Re-suggest all 4" for a list of several rows, else "Re-suggest".
+export function sectionButtonText(section: ResuggestSection, count: number): string {
+  return wholeLabel(section, count) === '' ? 'Re-suggest' : `Re-suggest all ${String(count)}`
 }
 
 export function rowScope(section: ResuggestSection, id: string, label: string): ResuggestScope {
@@ -42,7 +60,7 @@ export function scopeTitle(scope: ResuggestScope): string {
 
 // The chip under the title: "The whole section" or the row's own name.
 export function scopeChip(scope: ResuggestScope): string {
-  if (scope.itemIds.length === 0) return 'The whole section'
+  if (scope.itemIds.length === 0) return scope.label !== '' ? scope.label : 'The whole section'
   return scope.label !== '' ? scope.label : scope.itemIds.length === 1 ? 'One row' : `${String(scope.itemIds.length)} rows`
 }
 

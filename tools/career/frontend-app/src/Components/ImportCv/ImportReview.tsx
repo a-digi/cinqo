@@ -33,7 +33,9 @@ import {
   rowScope,
   sectionScope,
   showRowButton,
+  sectionButtonText,
   showSectionButton,
+  wholeLabel,
   type ResuggestPageState,
   type ResuggestScope,
   type ResuggestSection,
@@ -343,12 +345,22 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   const insert = insertState(checkedNow, insertedKeys, insertErrors, inserting)
   // Re-suggest (plan 268): the buttons of the section cards and of the rows of the lists.
   const page: ResuggestPageState = { targetChosen: targetId !== '', savedAnything: saveRecorded, busy: turnBusy }
+  // How many rows a list has, for the whole-section button ("Re-suggest all 4") and the dialog's chip ("All 4 jobs").
+  const countOf = (section: ResuggestSection): number =>
+    section === 'skills'
+      ? proposal.skills.length
+      : section === 'experience'
+        ? proposal.experience.length
+        : section === 'education'
+          ? proposal.education.length
+          : 1
   const sectionButton = (section: ResuggestSection): React.ReactNode =>
     showSectionButton(section, page) ? (
       <ResuggestButton
         ariaLabel={`Re-suggest ${SECTION_TITLES[section]}`}
+        label={sectionButtonText(section, countOf(section))}
         onClick={() => {
-          setResuggest(sectionScope(section))
+          setResuggest(sectionScope(section, wholeLabel(section, countOf(section))))
         }}
       />
     ) : null
