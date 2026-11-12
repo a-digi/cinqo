@@ -89,7 +89,9 @@ export function turnFailure(err: unknown): string {
   return text !== '' ? text : 'The AI could not finish. Try again.'
 }
 
-export const CODE_DRIVER_MESSAGE = 'This small local model cannot re-suggest yet. Choose another AI for this chat.'
+// Said under the AI line when the chosen model is a small local one (it is asked small questions and cannot add or remove jobs or education).
+export const LOCAL_MODEL_NOTE =
+  'A small local model looks at the suggestions one by one and changes the ones that are there; it can add or remove skills, but not jobs or education entries. It can take a while.'
 
 // The transcript of the dialog: what the person wrote, what the AI answered, and what went wrong.
 export interface ResuggestLine {

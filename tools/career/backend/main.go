@@ -356,6 +356,7 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 	http.HandleFunc("/cv-import/section-chats", cv.SectionChatsHandler)
+	http.HandleFunc("/cv-import/suggestion-changes", cv.SuggestionChangesHandler)
 	// Plan 209: the draft pieces the cv_import_* tools store, for a page that does the import in code.
 	http.HandleFunc("/cv-import/draft", cv.CVImportDraftHandler)
 	http.HandleFunc("/cv-import/draft/finish", cv.CVImportDraftFinishHandler)

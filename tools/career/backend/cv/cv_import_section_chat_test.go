@@ -642,3 +642,269 @@ func TestAChatMayHoldExactlyTheMaximumOfRowsAndAWholeSectionStoresNoIds(t *testi
 		t.Errorf("a whole-section binding stores no ids: %q %v", stored, err)
 	}
 }
+
+// ---- the page's own changes inside a scope (plan 268, step 4: the code driver of a small local model)
+
+func changesPost(body string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	SuggestionChangesHandler(rec, httptest.NewRequest(http.MethodPost, "/cv-import/suggestion-changes", strings.NewReader(body)))
+	return rec
+}
+
+func TestChangeSuggestionsInScopeAppliesOnlyInsideTheScope(t *testing.T) {
+	s := newSugg(t)
+	g := s.get()
+	out, err := ChangeSuggestionsInScope(s.run, "skills", nil, []SuggestionChange{upd("skills", g.Skills[0].Id, map[string]any{"value": "Golang"}), add("skills", map[string]any{"value": "Rust"}), rem("skills", g.Skills[2].Id)}, g.Revision)
+	if err != nil || out.Applied != 3 || out.Revision == g.Revision || len(out.Added) != 1 {
+		t.Fatalf("%+v %v", out, err)
+	}
+	for name, ch := range map[string]SuggestionChange{
+		"another section":  updSection("persona", map[string]any{"title": "X"}),
+		"another list":     upd("experience", g.Experience[0].Id, map[string]any{"title": "X"}),
+		"a single section": updSection("profile", map[string]any{"name": "X"}),
+	} {
+		before := s.get().Revision
+		_, err := ChangeSuggestionsInScope(s.run, "skills", nil, []SuggestionChange{ch}, "")
+		wantProblem(t, err, "this chat is about the Skills section, so it cannot change")
+		if s.get().Revision != before {
+			t.Errorf("%s: a refused call changed the suggestions", name)
+		}
+	}
+}
+
+func TestChangeSuggestionsInScopeForRowsAndSingleSections(t *testing.T) {
+	s := newSugg(t)
+	g := s.get()
+	if _, err := ChangeSuggestionsInScope(s.run, " skills ", []string{g.Skills[1].Id, g.Skills[1].Id, " "}, []SuggestionChange{upd("skills", g.Skills[1].Id, map[string]any{"value": "Postgres"})}, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ChangeSuggestionsInScope(s.run, "skills", []string{g.Skills[1].Id}, []SuggestionChange{upd("skills", g.Skills[0].Id, map[string]any{"value": "X"})}, "")
+	wantProblem(t, err, "is not one of them")
+	_, err = ChangeSuggestionsInScope(s.run, "skills", []string{g.Skills[1].Id}, []SuggestionChange{add("skills", map[string]any{"value": "X"})}, "")
+	wantProblem(t, err, "cannot add a row")
+	_, err = ChangeSuggestionsInScope(s.run, "skills", []string{"nope"}, []SuggestionChange{upd("skills", "nope", map[string]any{"value": "X"})}, "")
+	wantProblem(t, err, `no row with id "nope"`)
+	_, err = ChangeSuggestionsInScope(s.run, "persona", []string{"x"}, []SuggestionChange{updSection("persona", map[string]any{"title": "X"})}, "")
+	wantProblem(t, err, "single section")
+	_, err = ChangeSuggestionsInScope(s.run, "hobbies", nil, []SuggestionChange{updSection("persona", map[string]any{"title": "X"})}, "")
+	wantProblem(t, err, "section must be one of")
+	if _, err := ChangeSuggestionsInScope(s.run, "personalDetails", nil, []SuggestionChange{updSection("personalDetails", map[string]any{"headline": "New"})}, ""); err != nil || s.get().PersonalDetails.Headline != "New" {
+		t.Errorf("a single section: %v", err)
+	}
+}
+
+func TestChangeSuggestionsInScopeKeepsTheOrdinaryRules(t *testing.T) {
+	s := newSugg(t)
+	g := s.get()
+	if _, err := ChangeSuggestionsInScope(s.run, "skills", nil, []SuggestionChange{add("skills", map[string]any{"value": "X"})}, "stale"); !errors.Is(err, errSuggestionsMoved) {
+		t.Errorf("an old revision: %v", err)
+	}
+	if _, err := ChangeSuggestionsInScope(s.run, "skills", nil, []SuggestionChange{add("skills", map[string]any{"value": strings.Repeat("x", 5000)})}, g.Revision); err == nil {
+		t.Error("the validation of the result still applies")
+	}
+	setSummary(t, s.run, `{"skills":[{"index":0,"ok":true}]}`)
+	if _, err := ChangeSuggestionsInScope(s.run, "skills", nil, []SuggestionChange{add("skills", map[string]any{"value": "X"})}, ""); !errors.Is(err, errSuggestionsClosed) {
+		t.Errorf("a closed run: %v", err)
+	}
+	if _, err := ChangeSuggestionsInScope("00000000-0000-0000-0000-000000000000", "skills", nil, []SuggestionChange{add("skills", map[string]any{"value": "X"})}, ""); !errors.Is(err, errUnknownCVImportRun) {
+		t.Errorf("an unknown run: %v", err)
+	}
+}
+
+func TestTheSuggestionChangesRoute(t *testing.T) {
+	s := newSugg(t)
+	g := s.get()
+	body := func(section string, ids []string, basedOn string, ch ...map[string]any) string {
+		b, _ := json.Marshal(map[string]any{"runId": s.run, "section": section, "itemIds": ids, "changes": ch, "basedOn": basedOn})
+		return string(b)
+	}
+	rec := changesPost(body("skills", nil, g.Revision, map[string]any{"op": "add", "list": "skills", "item": map[string]any{"value": "Rust"}}))
+	var out SuggestionsChanged
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil || out.Applied != 1 || len(out.Added) != 1 || out.Revision == g.Revision || rec.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("a good one: %d %s", rec.Code, rec.Body.String())
+	}
+	add1 := map[string]any{"op": "add", "list": "skills", "item": map[string]any{"value": "Zig"}}
+	for name, c := range map[string]struct {
+		body string
+		code int
+	}{
+		"outside the scope": {body("skills", nil, "", map[string]any{"op": "update", "section": "persona", "fields": map[string]any{"title": "X"}}), http.StatusBadRequest},
+		"a stale revision":  {body("skills", nil, "stale", add1), http.StatusConflict},
+		"an unknown row":    {body("skills", []string{"nope"}, "", add1), http.StatusBadRequest},
+		"no changes":        {body("skills", nil, ""), http.StatusBadRequest},
+		"an unknown run":    {`{"runId":"00000000-0000-0000-0000-000000000000","section":"skills","changes":[{"op":"add","list":"skills","item":{"value":"x"}}]}`, http.StatusNotFound},
+		"no section":        {`{"runId":"` + s.run + `","changes":[]}`, http.StatusBadRequest},
+		"no run":            {`{"section":"skills","changes":[]}`, http.StatusBadRequest},
+		"not json":          {`nope`, http.StatusBadRequest},
+	} {
+		if rec := changesPost(c.body); rec.Code != c.code {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.code)
+		}
+	}
+	grec := httptest.NewRecorder()
+	SuggestionChangesHandler(grec, httptest.NewRequest(http.MethodGet, "/cv-import/suggestion-changes", nil))
+	if grec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET: %d", grec.Code)
+	}
+	setSummary(t, s.run, `{"skills":[{"index":0,"ok":true}]}`)
+	if rec := changesPost(body("skills", nil, "", add1)); rec.Code != http.StatusConflict {
+		t.Errorf("a closed run: %d %s", rec.Code, rec.Body.String())
+	}
+	gen, _ := createGeneratingCVImportRunFor("m", "cv.pdf", "conv-g", "", "")
+	if rec := changesPost(fmt.Sprintf(`{"runId":%q,"section":"skills","changes":[{"op":"add","list":"skills","item":{"value":"x"}}]}`, gen)); rec.Code != http.StatusConflict {
+		t.Errorf("a generating run: %d %s", rec.Code, rec.Body.String())
+	}
+	failed, _ := createGeneratingCVImportRunFor("m", "cv.pdf", "conv-f", "", "")
+	if _, err := finishCVImportRun(failed, runFailed, "boom"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := changesPost(fmt.Sprintf(`{"runId":%q,"section":"skills","changes":[{"op":"add","list":"skills","item":{"value":"x"}}]}`, failed)); rec.Code != http.StatusConflict {
+		t.Errorf("a failed run: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCleanScopeAndRowsExist(t *testing.T) {
+	ids, err := cleanScope("skills", []string{" a ", "a", "b", ""})
+	if err != nil || len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
+		t.Errorf("%v %v", ids, err)
+	}
+	if ids, err := cleanScope("persona", nil); err != nil || len(ids) != 0 {
+		t.Errorf("%v %v", ids, err)
+	}
+	if _, err := cleanScope("persona", []string{"x"}); err == nil {
+		t.Error("ids on a single section")
+	}
+	if _, err := cleanScope("nope", nil); err == nil {
+		t.Error("unknown section")
+	}
+	many := make([]string, MaxSectionChatRows)
+	for i := range many {
+		many[i] = fmt.Sprintf("i%d", i)
+	}
+	if _, err := cleanScope("skills", many); err != nil {
+		t.Errorf("exactly the maximum: %v", err)
+	}
+	if _, err := cleanScope("skills", append(many, "extra")); err == nil {
+		t.Error("over the maximum")
+	}
+	p := Proposal{Skills: []SkillProposal{{Id: "s1"}}, Experience: []ExperienceProposal{{Id: "e1"}}, Education: []EducationProposal{{Id: "d1"}}}
+	for section, id := range map[string]string{"skills": "s1", "experience": "e1", "education": "d1"} {
+		if err := rowsExist(p, section, []string{id}); err != nil {
+			t.Errorf("%s: %v", section, err)
+		}
+		if err := rowsExist(p, section, []string{id, "zz"}); err == nil {
+			t.Errorf("%s: an unknown id", section)
+		}
+	}
+	if err := rowsExist(p, "skills", []string{"e1"}); err == nil {
+		t.Error("a row of another list")
+	}
+	if err := rowsExist(p, "skills", nil); err != nil {
+		t.Error(err)
+	}
+}
+
+// ---- ids for older runs when the page reads them (plan 268)
+
+func getRunViaHandler(t *testing.T, id string) map[string]any {
+	t.Helper()
+	rec := call(http.MethodGet, "/cv-import/runs?id="+id, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	return decode(t, rec)["run"].(map[string]any)
+}
+
+func skillIDs(run map[string]any) []string {
+	var ids []string
+	for _, s := range run["aiProposal"].(map[string]any)["skills"].([]any) {
+		id, _ := s.(map[string]any)["id"].(string)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func TestReadingAnOlderRunGivesItsRowsIdsOnce(t *testing.T) {
+	setup(t)
+	id := readyRun(t, oldProposalJSON)
+	// stored without ids, as before plan 257
+	if strings.Contains(string(runOf(t, id).AIProposal), `"id"`) {
+		t.Fatal("the fixture must have no ids")
+	}
+	first := getRunViaHandler(t, id)
+	ids := skillIDs(first)
+	if len(ids) != 3 || ids[0] == "" || ids[1] == "" || ids[2] == "" || ids[0] == ids[1] {
+		t.Fatalf("ids: %v", ids)
+	}
+	for _, kind := range []string{"experience", "education"} {
+		for _, r := range first["aiProposal"].(map[string]any)[kind].([]any) {
+			if r.(map[string]any)["id"] == "" || r.(map[string]any)["id"] == nil {
+				t.Errorf("%s row without id", kind)
+			}
+		}
+	}
+	g, err := GetSuggestions(id)
+	if err != nil || first["revision"] != g.Revision {
+		t.Fatalf("the revision the page got is the one the tools use: %v vs %v (%v)", first["revision"], g.Revision, err)
+	}
+	second := getRunViaHandler(t, id)
+	if second["revision"] != first["revision"] || strings.Join(skillIDs(second), ",") != strings.Join(ids, ",") {
+		t.Errorf("the ids are given once: %v vs %v", skillIDs(second), ids)
+	}
+	if first["aiProposal"].(map[string]any)["profile"].(map[string]any)["name"] != "Ada Lovelace" {
+		t.Error("nothing but the ids changes")
+	}
+}
+
+func TestReadingARunLeavesRunsThatAreNotOpenAlone(t *testing.T) {
+	setup(t)
+	saved := readyRun(t, oldProposalJSON)
+	setSummary(t, saved, `{"skills":[{"index":0,"ok":true}]}`)
+	before := string(runOf(t, saved).AIProposal)
+	getRunViaHandler(t, saved)
+	if after := string(runOf(t, saved).AIProposal); after != before {
+		t.Errorf("a run that was saved from must not be rewritten:\n%s\n%s", before, after)
+	}
+	gen, err := createGeneratingCVImportRunFor("m", "cv.pdf", "conv-g", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	getRunViaHandler(t, gen)
+	if r := runOf(t, gen); r.Status != runGenerating || string(r.AIProposal) != noProposalJSON {
+		t.Errorf("%+v", r)
+	}
+	failed, _ := createGeneratingCVImportRunFor("m", "cv.pdf", "conv-f", "", "")
+	if _, err := finishCVImportRun(failed, runFailed, "boom"); err != nil {
+		t.Fatal(err)
+	}
+	getRunViaHandler(t, failed)
+	if r := runOf(t, failed); r.Status != runFailed || string(r.AIProposal) != noProposalJSON {
+		t.Errorf("%+v", r)
+	}
+	if rec := call(http.MethodGet, "/cv-import/runs?id=00000000-0000-0000-0000-000000000000", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown run: %d", rec.Code)
+	}
+}
+
+func TestAnUnreadableProposalIsLeftAloneWhenARunIsRead(t *testing.T) {
+	setup(t)
+	id := readyRun(t, `{"not":"a proposal","skills":"oops"}`)
+	before := string(runOf(t, id).AIProposal)
+	getRunViaHandler(t, id)
+	if string(runOf(t, id).AIProposal) != before {
+		t.Error("a proposal that cannot be read must not be rewritten")
+	}
+}
+
+func TestARunThatAlreadyHasIdsIsNotRewritten(t *testing.T) {
+	setup(t)
+	id := readyRun(t, oldProposalJSON)
+	getRunViaHandler(t, id)
+	stored := string(runOf(t, id).AIProposal)
+	updatedBefore := runOf(t, id).UpdatedAt
+	getRunViaHandler(t, id)
+	r := runOf(t, id)
+	if string(r.AIProposal) != stored || r.UpdatedAt != updatedBefore {
+		t.Errorf("the second read must write nothing")
+	}
+}

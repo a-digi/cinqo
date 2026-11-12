@@ -6,9 +6,10 @@ import { CvAiPicker } from '../../../CvAi/CvAiPicker'
 import { SETTINGS_PATH } from '../../../paths'
 import { Modal } from '../../../Shared/Modal/Modal'
 import { SparkleIcon } from '../../../Shared/Icons/icons'
+import { startLocalResuggest, type LocalResuggestChat } from './local/startLocalResuggest'
 import { startResuggestChat, type ResuggestChat } from './startResuggestChat'
 import {
-  CODE_DRIVER_MESSAGE,
+  LOCAL_MODEL_NOTE,
   DEFAULT_WISH,
   MAX_WISH_LENGTH,
   SECTION_TITLES,
@@ -46,7 +47,7 @@ export function ResuggestDialog({
   // The AI picker is a secondary thing: closed until the person asks to change it.
   const [pickerOpen, setPickerOpen] = useState(false)
   // The chat exists from the first send on; its AI is then fixed.
-  const [started, setStarted] = useState<{ name: string } | null>(null)
+  const [started, setStarted] = useState<{ name: string; local: boolean } | null>(null)
   const chat = useRef<ResuggestChat | null>(null)
   // The comment is what the dialog is for: the cursor starts in it.
   const box = useRef<HTMLTextAreaElement>(null)
@@ -54,6 +55,9 @@ export function ResuggestDialog({
     box.current?.focus()
   }, [])
   const firstSent = useRef(false)
+  // A small local model cannot call tools: the page asks it small questions and applies the answers itself (plan 268, step 4). `localChat` is that chat; `progress` says where it is.
+  const localChat = useRef<LocalResuggestChat | null>(null)
+  const [progress, setProgress] = useState('')
 
   useEffect(() => {
     onBusyChange(busy)
@@ -76,23 +80,30 @@ export function ResuggestDialog({
       add({ role: 'error', text: 'No AI platform is available. Choose one in Settings.' })
       return
     }
-    if (chat.current === null && usesCodeDriver(platform, choice.model)) {
-      add({ role: 'error', text: CODE_DRIVER_MESSAGE })
-      return
-    }
+    const local = localChat.current !== null || (chat.current === null && usesCodeDriver(platform, choice.model))
     const wish = wishOf(text)
     add({ role: 'user', text: text.trim() === '' ? DEFAULT_WISH : text.trim() })
     setText('')
     setBusy(true)
     try {
-      if (chat.current === null) {
-        chat.current = await startResuggestChat(run, scope, { platform, model: choice.model, source: ai.source })
-        setStarted({ name: `${platform.name}${choice.model ? ` · ${choice.model}` : ''}` })
+      const name = `${platform.name}${choice.model ? ` · ${choice.model}` : ''}`
+      if (local) {
+        if (localChat.current === null) {
+          localChat.current = await startLocalResuggest(run, scope, { platform, model: choice.model, source: ai.source })
+          setStarted({ name, local: true })
+        }
+        const result = await localChat.current.run(wish, setProgress)
+        add({ role: 'ai', text: result.summary })
+      } else {
+        if (chat.current === null) {
+          chat.current = await startResuggestChat(run, scope, { platform, model: choice.model, source: ai.source })
+          setStarted({ name, local: false })
+        }
+        const wasFirst = !firstSent.current
+        const reply = wasFirst ? await chat.current.first(wish) : await chat.current.next(wish)
+        firstSent.current = true
+        add({ role: 'ai', text: reply.content.trim() !== '' ? reply.content.trim() : 'The AI made no reply.' })
       }
-      const wasFirst = !firstSent.current
-      const reply = wasFirst ? await chat.current.first(wish) : await chat.current.next(wish)
-      firstSent.current = true
-      add({ role: 'ai', text: reply.content.trim() !== '' ? reply.content.trim() : 'The AI made no reply.' })
     } catch (err) {
       add({ role: 'error', text: turnFailure(err) })
     }
@@ -101,9 +112,11 @@ export function ResuggestDialog({
     } catch {
       // the page looks again at its next poll
     }
+    setProgress('')
     setBusy(false)
   }
 
+  const isLocal = started !== null ? started.local : usesCodeDriver(choice.platform, choice.model)
   const aiText = started?.name ?? (choice.platform ? `${choice.platform.name}${choice.model ? ` · ${choice.model}` : ''}` : '')
 
   return (
@@ -145,7 +158,7 @@ export function ResuggestDialog({
               aria-hidden="true"
               className="h-3 w-3 animate-spin rounded-full border-2 border-purple-300 border-t-purple-700 motion-reduce:animate-none"
             />
-            Working…
+            {progress !== '' ? progress : 'Working…'}
           </p>
         )}
       </div>
@@ -200,6 +213,11 @@ export function ResuggestDialog({
           </>
         )}
         <span className="block text-gray-400">Your CV and these suggestions are sent to it.</span>
+        {isLocal && (
+          <span data-testid="resuggest-local-note" className="mt-1 block text-gray-500">
+            {LOCAL_MODEL_NOTE}
+          </span>
+        )}
         {started === null && pickerOpen && ai.platforms.length > 0 && (
           <CvAiPicker
             choice={choice}

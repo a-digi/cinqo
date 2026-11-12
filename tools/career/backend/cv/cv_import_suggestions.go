@@ -238,6 +238,17 @@ func readyProposal(runID string) (cvImportRun, Proposal, string, error) {
 	return cvImportRun{}, Proposal{}, "", errors.New("the suggestions keep changing: try again")
 }
 
+// ensureSuggestionIDs gives every list row of a run's suggestions an id of its own, once, when the run is one the person can still review (ready, nothing saved from it yet) and
+// its proposal was stored before ids existed (plan 268): the review page needs a row's id for its Re-suggest button and for the local driver. It is the same guarded write the first
+// read by a tool makes (readyProposal) and changes nothing but the ids. A run that is generating, failed, closed or already complete is left alone; nothing is reported.
+func ensureSuggestionIDs(runID string) {
+	run, err := getCVImportRun(runID)
+	if err != nil || run.Status != runReady || !noRawJSON(run.SaveSummary) {
+		return
+	}
+	_, _, _, _ = readyProposal(runID)
+}
+
 // GetSuggestions is the suggestions of a run as the review page shows them (plan 257). An unknown run is errUnknownCVImportRun; a run that is still being analysed, has
 // failed or has no proposal says so.
 func GetSuggestions(runID string) (Suggestions, error) {

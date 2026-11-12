@@ -74,15 +74,10 @@ func sectionName(section string) string {
 	return section
 }
 
-// RecordSectionChat binds a conversation to a section (and some rows of a list) of a run that is open for changes, and returns the binding's id. It is refused for a run that is not
-// ready or already has a save summary, an unknown section, row ids for a single section or ids that are not rows of the list, and for a conversation that is already bound.
-func RecordSectionChat(runID, conversationID, section string, itemIDs []string) (string, error) {
-	runID, conversationID, section = strings.TrimSpace(runID), strings.TrimSpace(conversationID), strings.TrimSpace(section)
-	if !conversationIDPattern.MatchString(conversationID) {
-		return "", problem("conversationId must be the id of the chat (letters, digits, - and _)")
-	}
+// cleanScope checks a section and its row ids as a scope and returns the ids trimmed and without repeats: a single section has no row ids, a list at most MaxSectionChatRows.
+func cleanScope(section string, itemIDs []string) ([]string, error) {
 	if !contains(sections, section) && !contains(lists, section) {
-		return "", problem("section must be one of %s, %s", strings.Join(sections, ", "), strings.Join(lists, ", "))
+		return nil, problem("section must be one of %s, %s", strings.Join(sections, ", "), strings.Join(lists, ", "))
 	}
 	ids := make([]string, 0, len(itemIDs))
 	seen := map[string]bool{}
@@ -93,10 +88,52 @@ func RecordSectionChat(runID, conversationID, section string, itemIDs []string) 
 		}
 	}
 	if len(ids) > 0 && !contains(lists, section) {
-		return "", problem("%s is a single section: itemIds only go with skills, experience or education", section)
+		return nil, problem("%s is a single section: itemIds only go with skills, experience or education", section)
 	}
 	if len(ids) > MaxSectionChatRows {
-		return "", problem("a chat can be bound to at most %d rows (itemIds has %d)", MaxSectionChatRows, len(ids))
+		return nil, problem("a chat can be bound to at most %d rows (itemIds has %d)", MaxSectionChatRows, len(ids))
+	}
+	return ids, nil
+}
+
+// rowsExist checks that every id is a row of the section's list in the proposal.
+func rowsExist(p Proposal, section string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	have := map[string]bool{}
+	switch section {
+	case "skills":
+		for _, r := range p.Skills {
+			have[r.Id] = true
+		}
+	case "experience":
+		for _, r := range p.Experience {
+			have[r.Id] = true
+		}
+	default:
+		for _, r := range p.Education {
+			have[r.Id] = true
+		}
+	}
+	for _, id := range ids {
+		if !have[id] {
+			return problem("there is no row with id %q in %s", id, section)
+		}
+	}
+	return nil
+}
+
+// RecordSectionChat binds a conversation to a section (and some rows of a list) of a run that is open for changes, and returns the binding's id. It is refused for a run that is not
+// ready or already has a save summary, an unknown section, row ids for a single section or ids that are not rows of the list, and for a conversation that is already bound.
+func RecordSectionChat(runID, conversationID, section string, itemIDs []string) (string, error) {
+	runID, conversationID, section = strings.TrimSpace(runID), strings.TrimSpace(conversationID), strings.TrimSpace(section)
+	if !conversationIDPattern.MatchString(conversationID) {
+		return "", problem("conversationId must be the id of the chat (letters, digits, - and _)")
+	}
+	ids, err := cleanScope(section, itemIDs)
+	if err != nil {
+		return "", err
 	}
 	run, p, _, err := readyProposal(runID)
 	if err != nil {
@@ -105,27 +142,8 @@ func RecordSectionChat(runID, conversationID, section string, itemIDs []string) 
 	if !noRawJSON(run.SaveSummary) {
 		return "", errChatRunClosed
 	}
-	if len(ids) > 0 {
-		have := map[string]bool{}
-		switch section {
-		case "skills":
-			for _, r := range p.Skills {
-				have[r.Id] = true
-			}
-		case "experience":
-			for _, r := range p.Experience {
-				have[r.Id] = true
-			}
-		default:
-			for _, r := range p.Education {
-				have[r.Id] = true
-			}
-		}
-		for _, id := range ids {
-			if !have[id] {
-				return "", problem("there is no row with id %q in %s", id, section)
-			}
-		}
+	if err := rowsExist(p, section, ids); err != nil {
+		return "", err
 	}
 	stored := ""
 	if len(ids) > 0 {
@@ -370,5 +388,69 @@ func SectionChatsHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
+	}
+}
+
+// ChangeSuggestionsInScope is ChangeSuggestions for a caller that works inside a section (and some rows) without a bound conversation: the page's own code driver for a small
+// local model (plan 268, step 4), which asks the model tool-free questions and puts the answers on the suggestions itself. The scope is checked as a chat's would be (every
+// operation must stay inside the section or rows, the whole call is refused for the first one that does not), then the ordinary rules apply.
+func ChangeSuggestionsInScope(runID, section string, itemIDs []string, changes []SuggestionChange, basedOn string) (SuggestionsChanged, error) {
+	ids, err := cleanScope(strings.TrimSpace(section), itemIDs)
+	if err != nil {
+		return SuggestionsChanged{}, err
+	}
+	scope := sectionChat{RunID: runID, Section: strings.TrimSpace(section), ItemIDs: ids}
+	if err := scope.checkChangesInScope(changes); err != nil {
+		return SuggestionsChanged{}, err
+	}
+	if len(ids) > 0 {
+		_, p, _, err := readyProposal(runID)
+		if err != nil {
+			return SuggestionsChanged{}, err
+		}
+		if err := rowsExist(p, scope.Section, ids); err != nil {
+			return SuggestionsChanged{}, err
+		}
+	}
+	return ChangeSuggestions(runID, changes, basedOn)
+}
+
+type suggestionChangesRequest struct {
+	RunID   string             `json:"runId"`
+	Section string             `json:"section"`
+	ItemIDs []string           `json:"itemIds"`
+	Changes []SuggestionChange `json:"changes"`
+	BasedOn string             `json:"basedOn"`
+}
+
+// SuggestionChangesHandler handles POST cv-import/suggestion-changes: the page changes the suggestions of one section (or some rows) of a run it is reviewing, for a model that
+// cannot call tools. Answers the new revision, as the tool does.
+func SuggestionChangesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body suggestionChangesRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.RunID) == "" || strings.TrimSpace(body.Section) == "" {
+		http.Error(w, "runId, section and changes are required (itemIds and basedOn are optional)", http.StatusBadRequest)
+		return
+	}
+	out, err := ChangeSuggestionsInScope(strings.TrimSpace(body.RunID), body.Section, body.ItemIDs, body.Changes, body.BasedOn)
+	var bad *proposalProblem
+	switch {
+	case errors.Is(err, errUnknownCVImportRun), errors.Is(err, sql.ErrNoRows):
+		http.Error(w, "unknown cv import run id", http.StatusNotFound)
+	case errors.As(err, &bad):
+		http.Error(w, bad.msg, http.StatusBadRequest)
+	case errors.Is(err, errSuggestionsMoved), errors.Is(err, errSuggestionsClosed), errors.Is(err, errSuggestionsStillGenerating), errors.Is(err, errNoSuggestions):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case err != nil:
+		if strings.HasPrefix(err.Error(), "this CV import failed") {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, "failed to change the suggestions: "+err.Error(), http.StatusInternalServerError)
+	default:
+		db.WriteJSON(w, out)
 	}
 }

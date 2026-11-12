@@ -1911,6 +1911,38 @@ export async function updateCVImportRunSaveSummary(id: string, saveSummary: unkn
   if (!res.ok && res.status !== 204) throw new Error(`failed to update cv import run (${res.status})`)
 }
 
+// A refusal of cv-import/suggestion-changes: the HTTP status (400 a change that is not allowed, 409 the suggestions moved, closed or not ready) and the server's own sentence.
+export class SuggestionChangeError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'SuggestionChangeError'
+    this.status = status
+  }
+}
+
+// Changes the suggestions of one section (or some rows) of a run the person is reviewing, for a model that cannot call tools (plan 268, step 4): the server keeps the operations
+// inside the section or rows and applies them all or none. Resolves with the new revision.
+export async function applyCVImportSuggestionChanges(params: {
+  runId: string
+  section: string
+  itemIds?: string[]
+  changes: unknown[]
+  basedOn?: string
+}): Promise<{ revision: string; applied: number; added?: string[] }> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/suggestion-changes`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new SuggestionChangeError(res.status, text !== '' ? text : `failed to change the suggestions (${String(res.status)})`)
+  }
+  return (await res.json()) as { revision: string; applied: number; added?: string[] }
+}
+
 // Records which section (and which rows) of a run's suggestions a new chat is about, before its first message (plan 268): the server then keeps the AI inside it. Rejects with the
 // server's own sentence (a closed run, an unknown row, a conversation that is already bound).
 export async function recordCVImportSectionChat(params: {

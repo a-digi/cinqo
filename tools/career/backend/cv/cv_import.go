@@ -212,6 +212,8 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "id must be a uuid", http.StatusBadRequest)
 				return
 			}
+			// A run reviewed on this page needs an id on every row (plan 268): older runs get theirs here, once.
+			ensureSuggestionIDs(id)
 			run, err := getCVImportRun(id)
 			switch {
 			case errors.Is(err, errUnknownCVImportRun):
