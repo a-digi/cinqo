@@ -18,9 +18,9 @@ import {
   RuleFrame,
   ScoreFrame,
 } from './diagrams'
-import { tabIconFor } from './tabIcons'
+import { iconFor, tabIconFor } from './tabIcons'
 import { CHAPTERS, type Chapter, type ChapterId } from './profileInfoData'
-import { FAQ_TITLE, LANDING_HERO, SECTIONS, SERVICE_CARDS, faqItems } from './profileLandingData'
+import { FAQ_TITLE, LANDING_HERO, SECTIONS, SERVICE_CARDS, captionIcon, faqItems } from './profileLandingData'
 import { captionRows, captionVariant, clickLine } from './profileLandingRules'
 import { journeyProgress, journeyState, nextJourneyStep, type JourneyFacts } from './profileInfoRules'
 
@@ -136,6 +136,7 @@ export function ProfileInfoModal({ open, onClose, facts }: { open: boolean; onCl
           <>
             <Tile
               variant={layout.lead === 'wide' ? 'wide' : 'half'}
+              icon={iconFor(layout.icon, 'h-6 w-6')}
               titleId={`${ID_PREFIX}-${id}-title`}
               title={chapter.title}
               text={chapter.promise}
@@ -162,7 +163,8 @@ export function ProfileInfoModal({ open, onClose, facts }: { open: boolean; onCl
                         title={cap.title}
                         text={cap.text}
                         delay={i % 2}
-                        picture={variant === 'tall' ? (i === 0 ? <ScoreFrame /> : <RuleFrame />) : undefined}
+                        icon={iconFor(captionIcon(id, cap.title), 'h-6 w-6')}
+                        picture={variant === 'tall' ? i === 0 ? <ScoreFrame /> : <RuleFrame /> : undefined}
                       />
                     </div>
                   )

@@ -442,7 +442,7 @@ export function HeroCluster() {
   return (
     <ol aria-label="The parts of a profile" className="grid grid-cols-3 gap-x-6 gap-y-5" data-testid="hero-cluster">
       {HERO_NODES.map((n, i) => (
-        <li key={n.id} className={i === 3 ? 'col-start-1 sm:col-start-auto' : ''}>
+        <li key={n.id} className={`landing-float ${i === 3 ? 'col-start-1 sm:col-start-auto' : ''}`} style={{ '--i': i } as React.CSSProperties}>
           <BlueFrame badge={i < HERO_NODES.length - 1 ? '+' : undefined} className="!bg-white/95">
             <div className="flex flex-col items-center gap-1 text-center">
               <span className="text-gray-900" aria-hidden="true">
@@ -465,7 +465,7 @@ export function ScoreFrame() {
         <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Backend Engineer, Acme</div>
         <div className="mt-1 text-5xl font-black tabular-nums text-gray-900">82%</div>
         <div className="mx-auto mt-2 h-2 w-40 overflow-hidden rounded-full bg-gray-200">
-          <div className="h-full rounded-full" style={{ width: '82%', background: '#16a34a' }} />
+          <div className="landing-fill h-full rounded-full" style={{ width: '82%', background: '#16a34a' }} />
         </div>
         <div className="mt-1 text-xs font-medium text-green-700">match with Ada&apos;s profile</div>
       </div>

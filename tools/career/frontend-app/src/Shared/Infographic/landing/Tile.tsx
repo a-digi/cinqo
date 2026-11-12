@@ -14,6 +14,7 @@ export function Tile({
   actions,
   picture,
   delay = 0,
+  icon,
 }: {
   variant?: TileVariant
   // The id of the heading, so the section around can be named by it.
@@ -23,6 +24,8 @@ export function Tile({
   actions?: React.ReactNode
   picture?: React.ReactNode
   delay?: number
+  // A line icon shown in a round dark chip above the heading.
+  icon?: React.ReactNode
 }) {
   const wide = variant === 'wide'
   return (
@@ -44,17 +47,38 @@ export function Tile({
           />
         )}
         <div className="relative min-w-0">
-          <h3 id={titleId} className="text-3xl font-extrabold leading-tight tracking-tight md:text-4xl">
+          {icon !== undefined && (
+            <span
+              data-testid="tile-icon"
+              aria-hidden="true"
+              className="landing-chip mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl text-white"
+              style={{ background: LANDING.ink }}
+            >
+              {icon}
+            </span>
+          )}
+          <h3
+            id={titleId}
+            className="landing-rise text-3xl font-extrabold leading-tight tracking-tight md:text-4xl"
+            style={{ '--i': 0 } as React.CSSProperties}
+          >
             {title}
           </h3>
           {text !== undefined && text !== '' && (
-            <p className="mt-3 text-base leading-relaxed md:text-lg" style={{ color: LANDING.muted }}>
+            <p
+              className="landing-rise mt-3 text-base leading-relaxed md:text-lg"
+              style={{ color: LANDING.muted, '--i': 1 } as React.CSSProperties}
+            >
               {text}
             </p>
           )}
-          {actions !== undefined && <div className="mt-5 flex flex-wrap items-center gap-2">{actions}</div>}
+          {actions !== undefined && (
+            <div className="landing-rise mt-5 flex flex-wrap items-center gap-2" style={{ '--i': 2 } as React.CSSProperties}>
+              {actions}
+            </div>
+          )}
         </div>
-        {picture !== undefined && <div className="relative min-w-0">{picture}</div>}
+        {picture !== undefined && <div className="landing-pic relative min-w-0">{picture}</div>}
       </div>
     </Reveal>
   )

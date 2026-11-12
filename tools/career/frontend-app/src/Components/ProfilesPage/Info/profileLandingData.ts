@@ -5,7 +5,32 @@ import { GUIDE_PROFILE_PATH, importCvPathFor } from '../../../paths'
 import { CHAPTERS, MODAL_TITLE, HERO_LEAD, type ChapterId } from './profileInfoData'
 
 // The line icon of a tab; the picture component maps each key to one of the tool's icons.
-export type TabIcon = 'flow' | 'user' | 'target' | 'layers' | 'gauge' | 'briefcase' | 'steps' | 'help'
+export type TabIcon =
+  | 'flow'
+  | 'user'
+  | 'target'
+  | 'layers'
+  | 'gauge'
+  | 'briefcase'
+  | 'steps'
+  | 'help'
+  | 'bolt'
+  | 'link'
+  | 'pencil'
+  | 'education'
+  | 'languages'
+  | 'courses'
+  | 'hobbies'
+  | 'camera'
+  | 'match'
+  | 'pdf'
+  | 'upload'
+  | 'robot'
+  | 'users'
+  | 'eye'
+  | 'spark'
+  | 'lock'
+  | 'plus'
 
 // How the first tile of a chapter is laid out: `wide` puts the text at the left and the picture at the right (for a small picture); `stack` gives the
 // picture the whole width under the text (for a wide one). `tallCaptions` is how many of the first captions are tall tiles with the diagonal shape; the
@@ -85,3 +110,43 @@ export const SERVICE_CARDS: LandingServiceCard[] = [
     href: importCvPathFor(),
   },
 ]
+
+// The icon of each caption tile, by the caption's title (the icon says what the tile is about, so a tile is found at a glance). A caption that is not here
+// takes the icon of its chapter. The drift guard test checks that every caption has one and that none is left over.
+export const CAPTION_ICONS: Partial<Record<string, TabIcon>> = {
+  'You describe yourself once': 'user',
+  'Target roles say what you want': 'target',
+  'The tool works from it': 'bolt',
+  'One per person': 'user',
+  'Everything hangs off it': 'layers',
+  'Its card has a tile for every page': 'steps',
+  'Links and photos': 'link',
+  'One role for each kind of job': 'target',
+  'It follows the profile': 'flow',
+  'It chooses what it uses': 'eye',
+  'Always its own': 'lock',
+  'CVs come from a role': 'pdf',
+  'The AI reads them': 'robot',
+  'Summary and goals': 'pencil',
+  Skills: 'spark',
+  Experience: 'briefcase',
+  Education: 'education',
+  Languages: 'languages',
+  Courses: 'courses',
+  Hobbies: 'hobbies',
+  Photos: 'camera',
+  'The bar on each card': 'gauge',
+  'The four words': 'help',
+  'A link counts most': 'link',
+  'Some parts need a target role': 'target',
+  'A match score for each profile': 'match',
+  'Auto-add rules': 'plus',
+  'A job board and applications': 'briefcase',
+  CVs: 'pdf',
+  'Import a CV': 'upload',
+  'Let the AI improve a text': 'robot',
+}
+
+export function captionIcon(chapter: string, title: string): TabIcon {
+  return CAPTION_ICONS[title] ?? SECTIONS.find((s) => s.id === chapter)?.icon ?? 'help'
+}

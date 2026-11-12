@@ -1073,3 +1073,127 @@
     animation: none;
   }
 }
+
+/* The landing look of the Profiles infographic (plan 267) comes alive: the hero builds up piece by piece, the ghost word drifts, the framed pictures
+   float and their halo breathes, and inside a tile the heading, text, buttons and picture rise one after the other when it scrolls into view; badges pop,
+   bars fill. Everything is off under prefers-reduced-motion, where it is simply there. */
+.landing-hero-in {
+  opacity: 0;
+  animation: landing-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 120ms + 100ms) forwards;
+}
+.landing-rise {
+  opacity: 0;
+  transform: translateY(22px);
+}
+.is-in .landing-rise {
+  animation: landing-rise 650ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 110ms + 150ms) forwards;
+}
+.landing-pic {
+  opacity: 0;
+  transform: translateX(36px) scale(0.94);
+}
+.is-in .landing-pic {
+  animation: landing-pic 800ms cubic-bezier(0.2, 0.7, 0.2, 1) 300ms forwards;
+}
+.landing-float {
+  animation: landing-float 5s ease-in-out calc(var(--i, 0) * -1s) infinite;
+}
+.landing-halo {
+  animation: landing-halo 3s ease-in-out infinite;
+}
+.landing-ghost {
+  animation: landing-drift 14s ease-in-out infinite alternate;
+}
+.landing-badge {
+  transform: scale(0);
+  animation: landing-pop 500ms cubic-bezier(0.3, 1.6, 0.5, 1) 900ms forwards;
+}
+.landing-fill {
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.is-in .landing-fill {
+  animation: landing-fill 1100ms ease-out 700ms forwards;
+}
+@keyframes landing-rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes landing-pic {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes landing-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -8px;
+  }
+}
+@keyframes landing-halo {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px #e6e9ff;
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(47, 72, 255, 0.08);
+  }
+}
+@keyframes landing-drift {
+  from {
+    translate: 0 -50%;
+  }
+  to {
+    translate: -36px -50%;
+  }
+}
+@keyframes landing-pop {
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes landing-fill {
+  to {
+    transform: scaleX(1);
+  }
+}
+.landing-chip {
+  transform: scale(0) rotate(-20deg);
+}
+.is-in .landing-chip {
+  animation: landing-chip 600ms cubic-bezier(0.3, 1.6, 0.5, 1) 150ms forwards;
+}
+@keyframes landing-chip {
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-chip {
+    transform: none;
+    animation: none !important;
+  }
+  .landing-hero-in,
+  .landing-rise,
+  .landing-pic,
+  .landing-fill {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
+  }
+  .landing-badge {
+    transform: none;
+    animation: none !important;
+  }
+  .landing-float,
+  .landing-halo,
+  .landing-ghost {
+    animation: none !important;
+  }
+}
