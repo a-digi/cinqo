@@ -86,3 +86,70 @@ func (r *RunsQueryRepo) Events() ([]entity.Event, error) {
 	}
 	return out, rows.Err()
 }
+
+// EventsPage lists one page of the events, newest first, WITHOUT their evidence (the table of the unexpected stops does not show it; one stop's own read does).
+// An offset past the last event gives an empty list, not an error.
+func (r *RunsQueryRepo) EventsPage(offset, limit int) ([]entity.Event, error) {
+	rows, err := r.db.Query(`SELECT id, at, kind, verdict, acknowledged_at FROM system_events ORDER BY at DESC, id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []entity.Event{}
+	for rows.Next() {
+		var e entity.Event
+		var ack sql.NullString
+		if err := rows.Scan(&e.ID, &e.At, &e.Kind, &e.Verdict, &ack); err != nil {
+			return nil, err
+		}
+		if ack.Valid {
+			s := ack.String
+			e.AcknowledgedAt = &s
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// EventCounts is what the bar and the dropdown need: how many events there are, how many are not seen yet, and the newest one that is not.
+type EventCounts struct {
+	Total  int
+	Unseen int
+	Latest *entity.Event // the newest unseen event (id, at, kind and verdict only); nil when everything is seen
+}
+
+func (r *RunsQueryRepo) EventCounts() (EventCounts, error) {
+	var c EventCounts
+	if err := r.db.QueryRow(`SELECT COUNT(*), COUNT(*) - COUNT(acknowledged_at) FROM system_events`).Scan(&c.Total, &c.Unseen); err != nil {
+		return c, err
+	}
+	if c.Unseen == 0 {
+		return c, nil
+	}
+	var e entity.Event
+	if err := r.db.QueryRow(`SELECT id, at, kind, verdict FROM system_events WHERE acknowledged_at IS NULL ORDER BY at DESC, id DESC LIMIT 1`).Scan(&e.ID, &e.At, &e.Kind, &e.Verdict); err != nil {
+		return c, err
+	}
+	c.Latest = &e
+	return c, nil
+}
+
+// FindEvent reads one event with its evidence. found is false for an id that does not exist.
+func (r *RunsQueryRepo) FindEvent(id string) (e entity.Event, found bool, err error) {
+	var evidence string
+	var ack sql.NullString
+	switch err := r.db.QueryRow(`SELECT id, at, kind, verdict, evidence, acknowledged_at FROM system_events WHERE id = ?`, id).Scan(&e.ID, &e.At, &e.Kind, &e.Verdict, &evidence, &ack); {
+	case err == sql.ErrNoRows:
+		return entity.Event{}, false, nil
+	case err != nil:
+		return entity.Event{}, false, err
+	}
+	if err := json.Unmarshal([]byte(evidence), &e.Evidence); err != nil || e.Evidence == nil {
+		e.Evidence = []entity.EvidenceItem{}
+	}
+	if ack.Valid {
+		s := ack.String
+		e.AcknowledgedAt = &s
+	}
+	return e, true, nil
+}

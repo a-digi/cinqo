@@ -27,6 +27,33 @@ routes:
       - cinqo:system:read
       - cinqo:super:admin
 
+  # Plan 259: the unexpected stops as a dashboard. The list is paged (?page=&pageSize=) and has no evidence; the summary is what the bar and the dropdown read;
+  # one stop has its evidence. All three are reads with the bar's scope. "summary" is a literal segment, so it wins over {id}.
+  - path: /api/v1/system/events/summary
+    method: GET
+    executor: SystemEventsSummaryGet
+    security: authenticated
+    scopes:
+      - cinqo:system:read
+      - cinqo:super:admin
+
+  - path: /api/v1/system/events/{id}
+    method: GET
+    executor: SystemEventGet
+    security: authenticated
+    scopes:
+      - cinqo:system:read
+      - cinqo:super:admin
+
+  # Marking every unseen stop as seen changes data: the manage scope, like marking one.
+  - path: /api/v1/system/events/acknowledge-all
+    method: POST
+    executor: SystemEventsAcknowledgeAll
+    security: authenticated
+    scopes:
+      - cinqo:system:manage
+      - cinqo:super:admin
+
   - path: /api/v1/system/events/{id}/acknowledge
     method: POST
     executor: SystemEventAcknowledge

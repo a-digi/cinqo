@@ -237,6 +237,9 @@ func TestTheRoutesAreAuthenticatedAndScoped(t *testing.T) {
 		{"/api/v1/system/resources", "GET", "SystemResourcesGet", "cinqo:system:read"},
 		{"/api/v1/system/memory-top", "GET", "SystemMemoryTopGet", "cinqo:system:read"},
 		{"/api/v1/system/events", "GET", "SystemEventsGet", "cinqo:system:read"},
+		{"/api/v1/system/events/summary", "GET", "SystemEventsSummaryGet", "cinqo:system:read"},
+		{"/api/v1/system/events/{id}", "GET", "SystemEventGet", "cinqo:system:read"},
+		{"/api/v1/system/events/acknowledge-all", "POST", "SystemEventsAcknowledgeAll", "cinqo:system:manage"},
 		{"/api/v1/system/events/{id}/acknowledge", "POST", "SystemEventAcknowledge", "cinqo:system:manage"},
 	}
 	if len(blocks) != len(wants) {

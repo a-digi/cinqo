@@ -81,6 +81,10 @@ func Init(ctx serverdi.Context) {
 		"SystemMemoryTopGet":     local_routing.HandlerFunc(system.TopHandler),
 		"SystemEventsGet":        local_routing.HandlerFunc(system.EventsHandler),
 		"SystemEventAcknowledge": local_routing.HandlerFunc(system.AcknowledgeEventHandler),
+		// plan 259: the unexpected stops as a dashboard
+		"SystemEventsSummaryGet":     local_routing.HandlerFunc(system.EventsSummaryHandler),
+		"SystemEventGet":             local_routing.HandlerFunc(system.EventHandler),
+		"SystemEventsAcknowledgeAll": local_routing.HandlerFunc(system.AcknowledgeAllHandler),
 
 		"AuthConfig":   &auth_handler.AuthConfigHandler{},
 		"AuthCallback": &auth_handler.OidcCallbackHandler{},

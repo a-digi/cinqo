@@ -310,9 +310,9 @@ func TestTheOldRecordsAreTrimmedButAnOpenRunNeverIs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for i := 0; i < 70; i++ {
+	for i := 0; i < 520; i++ {
 		at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Hour).Format(time.RFC3339)
-		if err := pers.InsertEvent(entity.Event{ID: fmt.Sprintf("e%02d", i), At: at, Kind: "x", Verdict: "v"}); err != nil {
+		if err := pers.InsertEvent(entity.Event{ID: fmt.Sprintf("e%03d", i), At: at, Kind: "x", Verdict: "v"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -335,11 +335,11 @@ func TestTheOldRecordsAreTrimmedButAnOpenRunNeverIs(t *testing.T) {
 		t.Error("the open run must stay")
 	}
 	ev := events(t, w.db)
-	if len(ev) != KeepEvents || ev[0].ID != "e69" || ev[len(ev)-1].ID != "e20" {
+	if len(ev) != KeepEvents || ev[0].ID != "e519" || ev[len(ev)-1].ID != "e020" {
 		t.Errorf("%d events, first %s last %s", len(ev), ev[0].ID, ev[len(ev)-1].ID)
 	}
-	if KeepRuns != 20 || KeepEvents != 50 || HeartbeatEvery != 10*time.Second {
-		t.Error("the plan's numbers: 20 runs, 50 events, a heartbeat every 10 s")
+	if KeepRuns != 20 || KeepEvents != 500 || HeartbeatEvery != 10*time.Second {
+		t.Error("the plan's numbers: 20 runs, 500 events (plan 259: a table with pagination), a heartbeat every 10 s")
 	}
 }
 

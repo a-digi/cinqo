@@ -158,7 +158,7 @@ func TestEveryExecutorOfTheRouteFileIsRegisteredInTheHandlerMap(t *testing.T) {
 			t.Errorf("executor %s has no handler in routes.go", m[1])
 		}
 	}
-	if found != 4 {
-		t.Errorf("%d executors, want 4", found)
+	if found != 7 {
+		t.Errorf("%d executors, want 7", found)
 	}
 }

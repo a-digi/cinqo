@@ -21,10 +21,10 @@ import (
 // HeartbeatEvery is how often a living app writes down how it is doing (plan 223, Q4).
 const HeartbeatEvery = 10 * time.Second
 
-// KeepRuns and KeepEvents bound what is kept.
+// KeepRuns and KeepEvents bound what is kept. The unexpected stops (plan 259) are shown in a table with pagination, so more of them are kept than the dropdown ever showed.
 const (
 	KeepRuns   = 20
-	KeepEvents = 50
+	KeepEvents = 500
 )
 
 // Options are the sources of a Recorder; every one but DB has a real default.

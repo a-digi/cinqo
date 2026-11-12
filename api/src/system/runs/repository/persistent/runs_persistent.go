@@ -61,6 +61,16 @@ func (r *RunsPersistentRepo) Acknowledge(id, at string) (found bool, err error) 
 	return n > 0, err
 }
 
+// AcknowledgeAll marks every event that is not seen yet as seen, now, and returns how many it marked. Events already seen keep their first time; with nothing
+// unseen it changes nothing and returns 0.
+func (r *RunsPersistentRepo) AcknowledgeAll(at string) (int64, error) {
+	res, err := r.db.Exec(`UPDATE system_events SET acknowledged_at = ? WHERE acknowledged_at IS NULL`, at)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // Prune keeps the newest keepRuns finished runs (a run that is still open is never removed) and the newest keepEvents events.
 func (r *RunsPersistentRepo) Prune(keepRuns, keepEvents int) error {
 	if _, err := r.db.Exec(`DELETE FROM system_runs WHERE ended_at IS NOT NULL AND id NOT IN (SELECT id FROM system_runs WHERE ended_at IS NOT NULL ORDER BY started_at DESC, id DESC LIMIT ?)`, keepRuns); err != nil {
