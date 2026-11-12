@@ -26,6 +26,7 @@ export function OptimizeWithAi({
   ai,
   platforms,
   onApplied,
+  variant = 'button',
 }: {
   subjectKind: OptimizeSubjectKind
   subjectId: string
@@ -33,6 +34,9 @@ export function OptimizeWithAi({
   ai: AiChoice
   platforms: Platform[]
   onApplied: () => void
+  // 'button' (the default) is the button with words of the profile's and the target role's own page; 'icon' is the compact round icon of a card in a list (plan 258, step 8): the same
+  // dialog, the same review, the same runs; the state is in the look of the icon, its tooltip and its label, and the lines under the button become a small bubble under the icon.
+  variant?: 'button' | 'icon'
 }) {
   const runs = useOptimizeRuns(subjectKind, subjectId)
   const state = optimizeView(runs.runs)
@@ -122,8 +126,115 @@ export function OptimizeWithAi({
           ? 'No AI platform is available. Choose one in Settings.'
           : ''
 
-  return (
-    <div ref={panel} data-testid="optimize-with-ai" className="flex flex-col items-end gap-1.5">
+  const iconMode = variant === 'icon'
+  const progressText = runs.progress && runs.progress.total > 0 ? ` ${String(runs.progress.done)} of ${String(runs.progress.total)}` : ''
+  const iconTitle =
+    state.view === 'working'
+      ? `Optimizing ${subjectName}…${progressText}`
+      : state.view === 'review'
+        ? `${reviewLabel(state.count)}${state.staleCount > 0 ? ` · ${String(state.staleCount)} out of date` : ''}`
+        : state.view === 'failed'
+          ? `The last optimization failed: ${state.run.error ?? 'no reason was recorded'}`
+          : disabledReason || `Optimize ${subjectName} with AI`
+  const iconLabel =
+    state.view === 'working'
+      ? `Optimizing ${subjectName}${progressText ? ` (${progressText.trim()})` : ''}`
+      : state.view === 'review'
+        ? `${reviewLabel(state.count)} for ${subjectName}`
+        : state.view === 'failed'
+          ? `Optimize ${subjectName} with AI (the last run failed)`
+          : `Optimize ${subjectName} with AI`
+  const RING = 2 * Math.PI * 14
+  const iconFace = (
+    <>
+      <button
+        key={state.view === 'review' ? 'review' : 'start'}
+        type="button"
+        disabled={state.view !== 'review' && disabledReason !== ''}
+        title={iconTitle}
+        aria-label={iconLabel}
+        onClick={() => {
+          if (state.view === 'review') setReviewOpen(true)
+          else setDialogOpen(true)
+        }}
+        className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${
+          state.view === 'review'
+            ? 'opt-pop opt-lift bg-purple-700 text-white hover:bg-purple-800'
+            : `${state.view === 'working' ? 'opt-working' : 'opt-lift'} border border-purple-200 bg-white text-purple-700 hover:bg-purple-50`
+        }`}
+      >
+        <span className={state.view === 'working' ? 'opt-icon-pulse' : 'inline-flex'}>
+          <SparkleIcon />
+        </span>
+        {state.view === 'working' && runs.progress && runs.progress.total > 0 && (
+          <span
+            role="progressbar"
+            aria-label="Optimization progress"
+            aria-valuemin={0}
+            aria-valuemax={runs.progress.total}
+            aria-valuenow={runs.progress.done}
+            className="pointer-events-none absolute inset-0"
+          >
+            <svg viewBox="0 0 32 32" className="h-full w-full -rotate-90" aria-hidden="true">
+              <circle
+                className="opt-ring"
+                cx="16"
+                cy="16"
+                r="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray={RING}
+                strokeDashoffset={RING * (1 - runs.progress.done / runs.progress.total)}
+              />
+            </svg>
+          </span>
+        )}
+        {state.view === 'review' && (
+          <span
+            data-testid="optimize-badge"
+            aria-hidden="true"
+            className="opt-pop absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white"
+          >
+            {state.count}
+          </span>
+        )}
+        {state.view === 'failed' && (
+          <span
+            data-testid="optimize-failed-dot"
+            aria-hidden="true"
+            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-red-500"
+          />
+        )}
+      </button>
+      {(applied !== null || runs.notice !== '') && (
+        <div className="absolute right-0 top-full z-10 mt-1 flex w-max max-w-[16rem] flex-col items-end gap-1">
+          {applied && (
+            <p
+              role="status"
+              className={`opt-pop rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 shadow-sm ${applied.fading ? 'opt-fade-out' : ''}`}
+            >
+              {appliedText(applied.count)}
+            </p>
+          )}
+          {runs.notice && (
+            <p
+              role="status"
+              className="opt-fade-in rounded-md bg-white px-2 py-1 text-right text-xs text-gray-600 shadow-md ring-1 ring-gray-200"
+            >
+              {runs.notice}{' '}
+              <button type="button" onClick={runs.clearNotice} className="underline">
+                OK
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  )
+  const buttonFace = (
+    <>
       <div className="flex flex-wrap items-center justify-end gap-2">
         {state.view === 'review' ? (
           <button
@@ -212,8 +323,32 @@ export function OptimizeWithAi({
           </button>
         </p>
       )}
+    </>
+  )
 
+  return (
+    <div
+      ref={panel}
+      data-testid="optimize-with-ai"
+      data-variant={variant}
+      className={iconMode ? 'relative inline-flex' : 'flex flex-col items-end gap-1.5'}
+    >
+      {iconMode ? iconFace : buttonFace}
       <Modal open={dialogOpen} title="Optimize with AI" onClose={closeDialog}>
+        {iconMode && state.view === 'failed' && (
+          <p role="alert" className="opt-fade-in mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            The last optimization failed: {state.run.error ?? 'no reason was recorded'}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                void runs.dismiss(state.run.id)
+              }}
+              className="underline"
+            >
+              Dismiss
+            </button>
+          </p>
+        )}
         <p className="mb-3 text-sm text-gray-600">
           The AI reads the texts of the {word} <span className="font-medium text-gray-800">{subjectName}</span> and suggests better wording.
           It never adds anything that is not already there, and nothing changes until you approve a suggestion; a declined suggestion is

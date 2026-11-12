@@ -20,6 +20,7 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { PhotoAvatar } from '../../ProfileImage/PhotoAvatar'
 import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
 import { PersonaCvs } from './PersonaCvs'
+import { OptimizeWithAi } from '../../../Optimize/OptimizeWithAi'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
@@ -417,7 +418,18 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                             />
                           )}
                         </div>
-                        <div className="flex shrink-0 gap-2">
+                        <div className="flex shrink-0 items-center gap-2">
+                          <OptimizeWithAi
+                            variant="icon"
+                            subjectKind="persona"
+                            subjectId={p.id}
+                            subjectName={p.name}
+                            ai={ai}
+                            platforms={ai.platforms}
+                            onApplied={() => {
+                              load(profileId)
+                            }}
+                          />
                           <button
                             type="button"
                             onClick={() => {

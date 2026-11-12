@@ -692,6 +692,11 @@
   transition: width 300ms ease-out;
 }
 
+/* The ring around a working icon (a list card's compact face) fills with the count. */
+.opt-ring {
+  transition: stroke-dashoffset 300ms ease-out;
+}
+
 @keyframes opt-spin {
   to {
     transform: rotate(360deg);
@@ -924,6 +929,7 @@
   }
 
   .opt-bar,
+  .opt-ring,
   .opt-fade-out,
   .opt-lift,
   .opt-card {

@@ -15,6 +15,8 @@ import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
 import { summarizeProfiles } from './profileStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { OptimizeWithAi } from '../../Optimize/OptimizeWithAi'
 
 // The job seeker layer, one level above Persona (step 10) — the
 // natural new entry point now that nothing else (Personas, and
@@ -25,6 +27,8 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 // above, the profiles below; "New profile" opens its own page. See
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
 export function ProfilesPage() {
+  // "Optimize with AI" on every profile card (plan 258, step 8): the AI to start from is read once for the whole list.
+  const ai = useAiChoice()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
@@ -265,7 +269,16 @@ export function ProfilesPage() {
                             <div className="text-sm font-semibold">{p.firstName || p.lastName ? name : '(unnamed)'}</div>
                             <div className="text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
                           </div>
-                          <div className="flex shrink-0 gap-2">
+                          <div className="flex shrink-0 items-center gap-2">
+                            <OptimizeWithAi
+                              variant="icon"
+                              subjectKind="profile"
+                              subjectId={p.id}
+                              subjectName={name}
+                              ai={ai}
+                              platforms={ai.platforms}
+                              onApplied={load}
+                            />
                             <button
                               type="button"
                               onClick={() => {
