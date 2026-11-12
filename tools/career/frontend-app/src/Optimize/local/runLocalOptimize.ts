@@ -1,3 +1,4 @@
+import { reasonFor } from '../language'
 import { retryPrompt, buildLocalPrompt, checkAnswer, isLocalCandidate } from './localText'
 
 // The local driver of "Optimize with AI" (plan 258, step 5): for a small local model that cannot follow a prompt with tools (Phi-4-mini). Code reads the texts, asks the model about ONE text
@@ -33,7 +34,7 @@ export async function runLocalOptimize(deps: LocalOptimizeDeps, focus: string): 
     if (!verdict.ok) verdict = checkAnswer(t.text, await deps.ask(retryPrompt(prompt, verdict.reason)))
     if (verdict.ok) {
       try {
-        await deps.store({ kind: t.kind, itemId: t.itemId, field: t.field, text: verdict.text, reason: 'Clearer wording.' })
+        await deps.store({ kind: t.kind, itemId: t.itemId, field: t.field, text: verdict.text, reason: reasonFor(t.text) })
         stored++
       } catch {
         // The server refused it (a rule the page does not know): this text is left as it is.

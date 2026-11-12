@@ -125,6 +125,9 @@ func AddSuggestion(runID, kind, itemID, field, text, reason string) (Stored, err
 	case utf8.RuneCountInString(reason) > maxReason:
 		return Stored{}, invalid("reason is too long (max %d characters): one sentence", maxReason)
 	}
+	if err := checkLanguage(cur.Text, text, reason); err != nil {
+		return Stored{}, err
+	}
 
 	tx, err := db.CareerDB.Begin()
 	if err != nil {
@@ -246,9 +249,9 @@ func RegisterSuggestOptimization(server *mcp.Server) {
 		Name: "suggest_optimization",
 		Description: "Hand over ONE improved text to the user, who then approves or declines it. It changes nothing in the profile or target role: only the user's approval does. " +
 			"Call it once for each text you really improve, with the runId, the text's kind, itemId and field exactly as get_optimize_subject gave them, the WHOLE improved text and one short sentence saying why it is better. " +
-			"Improve the wording only: keep the language, keep every fact, number, name and date, never add anything the text does not say, and never drop a bullet point (a line starting with \"- \"). " +
+			"Improve the wording only: write the improved text AND the reason in the SAME language as the text you improve (a German text gets a German suggestion, never an English one; never translate), keep every fact, number, name and date, never add anything the text does not say, and never drop a bullet point (a line starting with \"- \"). " +
 			"A title stays one line. Suggest nothing for a text that is already good. Sending the same text again replaces your earlier suggestion for it. " +
-			"Returns the suggestion's id. Fails (and says why) when the run is unknown or finished, the text does not exist, the improved text is empty, unchanged, too long or loses a bullet point.",
+			"Returns the suggestion's id. Fails (and says why) when the run is unknown or finished, the text does not exist, the improved text is empty, unchanged, too long, loses a bullet point or is in another language than the text.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args suggestArgs) (*mcp.CallToolResult, any, error) {
 		runID := strings.TrimSpace(args.RunID)
 		if runID == "" {

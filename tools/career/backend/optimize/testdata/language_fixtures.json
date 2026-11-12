@@ -1,0 +1,60 @@
+{
+  "note": "Shared by the Go test (optimize/language_test.go) and the TypeScript tests of the page: the same detector must place the same sentences. 'clear' texts must be placed in their language; 'unplaced' ones must not be placed at all.",
+  "clear": {
+    "de": [
+      "Ich habe die Zahlungsplattform des Unternehmens entwickelt und mit dem Team über mehrere Jahre betreut und weiter verbessert.",
+      "Verantwortlich für die Einführung neuer Funktionen sowie für die Zusammenarbeit mit den Kunden und der Geschäftsleitung.",
+      "Einführung von Code-Reviews und automatisierten Tests, wodurch die Fehlerquote um 40 Prozent gesunken ist.\n- Entwicklung der Schnittstellen in Go\n- Betreuung der Datenbank und der Auslieferung\nTechnologies: Go, PostgreSQL, Docker",
+      "Backend-Entwickler mit sechs Jahren Erfahrung in Go und SQL, spezialisiert auf Zahlungssysteme und skalierbare Architekturen.",
+      "Verantwortlich für Go Services, Kubernetes, Terraform, AWS Lambda und die gesamte Continuous Integration Pipeline im Team.",
+      "Verbesserte die Zuverlässigkeit des Bezahldienstes und senkte die Antwortzeit im ersten Jahr um 30 Prozent."
+    ],
+    "en": [
+      "I built the payment platform of the company and worked with the team for several years to maintain and improve it.",
+      "Responsible for the launch of new features and for the collaboration with the customers and the management team.",
+      "Introduced code reviews and automated tests, which reduced the error rate by 40 percent.\n- Built the interfaces in Go\n- Looked after the database and the delivery\nTechnologies: Go, PostgreSQL, Docker",
+      "Backend engineer with six years of experience in Go and SQL, specialised in payment systems and scalable architectures.",
+      "Senior Backend Engineer at Acme GmbH in Berlin, working on the payment team with Go and Kubernetes every day.",
+      "Improved the reliability of the checkout service and reduced the response time by 30 percent in the first year."
+    ],
+    "fr": [
+      "Responsable du développement de la plateforme et de la coordination des équipes, avec une attention particulière pour les clients et les partenaires.",
+      "J'ai travaillé pendant plusieurs années dans l'équipe qui a développé la plateforme de paiement et je suis responsable de la qualité des tests.",
+      "Mise en place de revues de code et de tests automatisés, ce qui a réduit le taux d'erreurs de 40 pour cent.\n- Développement des interfaces en Go\n- Suivi de la base de données et de la livraison",
+      "Ingénieur backend avec six ans d'expérience en Go et SQL, spécialisé dans les systèmes de paiement et les architectures évolutives."
+    ],
+    "it": [
+      "Responsabile dello sviluppo della piattaforma di pagamento e del coordinamento del team, con particolare attenzione per i clienti e per i partner.",
+      "Ho lavorato per diversi anni nel team che ha sviluppato la piattaforma e sono stato responsabile della qualità e dei test.",
+      "Introduzione delle revisioni del codice e dei test automatici, che ha ridotto il tasso di errori del 40 per cento.\n- Sviluppo delle interfacce in Go\n- Gestione del database e della consegna"
+    ],
+    "es": [
+      "Responsable del desarrollo de la plataforma de pagos y de la coordinación del equipo, con especial atención a los clientes y a los socios.",
+      "He trabajado durante varios años en el equipo que ha desarrollado la plataforma y he sido responsable de la calidad y de las pruebas.",
+      "Introducción de revisiones de código y de pruebas automáticas, lo que ha reducido la tasa de errores en un 40 por ciento.\n- Desarrollo de las interfaces en Go\n- Gestión de la base de datos y de la entrega",
+      "Ingeniero backend con seis años de experiencia en Go y SQL, especializado en sistemas de pago y arquitecturas escalables."
+    ],
+    "nl": [
+      "Verantwoordelijk voor de ontwikkeling van het betalingsplatform en voor de samenwerking met het team, de klanten en de partners van het bedrijf.",
+      "Ik heb meerdere jaren gewerkt in het team dat het platform heeft ontwikkeld en ben verantwoordelijk geweest voor de kwaliteit en de tests.",
+      "Invoering van codereviews en geautomatiseerde tests, waardoor het aantal fouten met 40 procent is gedaald.\n- Ontwikkeling van de koppelingen in Go\n- Beheer van de database en van de oplevering"
+    ],
+    "sq": [
+      "Përgjegjës për zhvillimin e platformës së pagesave dhe për bashkëpunimin me ekipin, me klientët dhe me partnerët e kompanisë.",
+      "Kam punuar për disa vite në ekipin që ka zhvilluar platformën dhe kam qenë përgjegjës për cilësinë dhe testet.",
+      "Futja e rishikimeve të kodit dhe e testeve automatike, gjë që ka ulur përqindjen e gabimeve me 40 për qind.\n- Zhvillimi i ndërfaqeve në Go\n- Mirëmbajtja e bazës së të dhënave dhe e dorëzimit",
+      "Zhvillues backend me gjashtë vite përvojë në Go dhe SQL, i specializuar në sisteme pagesash dhe arkitektura të shkallëzueshme."
+    ]
+  },
+  "unplaced": [
+    "Go, SQL, Docker, Kubernetes, AWS, Terraform",
+    "Senior Developer",
+    "Ada Lovelace",
+    "Berlin, Germany",
+    "2019 - 2023",
+    "Technologies: Go, PostgreSQL, Docker, Kubernetes",
+    "",
+    "   ",
+    "Tak, dziękuję bardzo za wszystko i do zobaczenia wkrótce w Warszawie."
+  ]
+}

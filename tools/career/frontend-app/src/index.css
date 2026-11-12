@@ -606,6 +606,293 @@
   transform: scale(0.96);
 }
 
+/* "Optimize with AI" (plan 258, step 7): quick animations that answer a question the person has at that moment (is it working? did something arrive? what happened to the card I
+   clicked? what changed?). 150 to 400 ms each; only the working sign loops. The timings are repeated in Optimize/motion.ts (the review keeps a decided card in the page until its
+   animation has ended): keep the two in step. All of it is off under prefers-reduced-motion, where the state is still told by text and colour. */
+@keyframes opt-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.7;
+  }
+}
+
+.opt-icon-pulse {
+  display: inline-flex;
+  animation: opt-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes opt-sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+.opt-working {
+  position: relative;
+  overflow: hidden;
+}
+
+.opt-working::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(168, 85, 247, 0.16) 50%, transparent 70%);
+  animation: opt-sheen 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes opt-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.opt-pop {
+  animation: opt-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+@keyframes opt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.opt-fade-in {
+  animation: opt-fade-in 240ms ease-out backwards;
+}
+
+.opt-fade-out {
+  opacity: 0;
+  transition: opacity 400ms ease-in;
+}
+
+.opt-bar {
+  transition: width 300ms ease-out;
+}
+
+@keyframes opt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.opt-spin {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: opt-spin 700ms linear infinite;
+}
+
+@keyframes opt-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.opt-card-in {
+  animation: opt-card-in 280ms ease-out backwards;
+  animation-delay: calc(min(var(--i, 0), 8) * 50ms);
+}
+
+@keyframes opt-mark-in {
+  from {
+    background-color: transparent;
+  }
+}
+
+.opt-marks mark {
+  animation: opt-mark-in 450ms ease-out 350ms backwards;
+}
+
+/* A decided card: the card itself flashes (approved) or slides out (declined), then its row folds away so the cards below glide up. --k is its place among the cards that leave
+   together (60 ms apart). */
+@keyframes opt-flash {
+  0% {
+    background-color: #ffffff;
+  }
+  40%,
+  100% {
+    background-color: #dcfce7;
+    border-color: #86efac;
+  }
+}
+
+@keyframes opt-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+@keyframes opt-fold {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    margin-bottom: 0;
+  }
+}
+
+.opt-row {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.opt-row > .opt-row-inner {
+  min-height: 0;
+}
+
+.opt-row[data-leaving] > .opt-row-inner {
+  overflow: hidden;
+}
+
+.opt-row[data-leaving='approved'] {
+  animation: opt-fold 420ms ease-in forwards;
+  animation-delay: calc(var(--k, 0) * 60ms + 180ms);
+}
+
+.opt-row[data-leaving='approved'] .opt-card {
+  animation: opt-flash 260ms ease-out forwards;
+  animation-delay: calc(var(--k, 0) * 60ms);
+}
+
+.opt-row[data-leaving='declined'] {
+  animation: opt-fold 420ms ease-in forwards;
+  animation-delay: calc(var(--k, 0) * 60ms + 180ms);
+}
+
+.opt-row[data-leaving='declined'] .opt-card {
+  animation: opt-slide-out 260ms ease-in forwards;
+  animation-delay: calc(var(--k, 0) * 60ms);
+}
+
+@keyframes opt-shake {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+/* Two names for the same shake: a card that is refused again gets the other class, which starts the animation again. */
+@keyframes opt-shake-b {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+.opt-shake-a {
+  animation: opt-shake 380ms ease-in-out 1;
+}
+
+.opt-shake-b {
+  animation: opt-shake-b 380ms ease-in-out 1;
+}
+
+@keyframes opt-amber {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  40% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.35);
+  }
+}
+
+.opt-amber-once {
+  animation: opt-amber 400ms ease-out 1;
+}
+
+@keyframes opt-draw {
+  from {
+    stroke-dashoffset: 30;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.opt-check-path {
+  stroke-dasharray: 30;
+  animation: opt-draw 400ms ease-out 100ms backwards;
+}
+
+.opt-lift {
+  transition:
+    transform 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+.opt-lift:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.opt-lift:active:not(:disabled) {
+  transform: none;
+}
+
+.opt-card {
+  transition: box-shadow 150ms ease-out;
+}
+
+.opt-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .career-enter,
   .career-stagger > *,
@@ -619,8 +906,32 @@
   .career-draw,
   .career-tick,
   .career-chip,
-  .career-wiggle {
+  .career-wiggle,
+  .opt-icon-pulse,
+  .opt-working::after,
+  .opt-pop,
+  .opt-fade-in,
+  .opt-spin,
+  .opt-card-in,
+  .opt-marks mark,
+  .opt-row[data-leaving],
+  .opt-row[data-leaving] .opt-card,
+  .opt-shake-a,
+  .opt-shake-b,
+  .opt-amber-once,
+  .opt-check-path {
     animation: none !important;
+  }
+
+  .opt-bar,
+  .opt-fade-out,
+  .opt-lift,
+  .opt-card {
+    transition: none !important;
+  }
+
+  .opt-lift:hover:not(:disabled) {
+    transform: none;
   }
 }
 

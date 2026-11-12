@@ -2,6 +2,7 @@
 // tools, so code does the work: it asks the model ONE text at a time, with no tools, and reads the plain answer. The model's answer is never trusted: it is cleaned (the wrappers a small
 // model puts around a text) and checked, and a wrong one is asked for once more with the exact fault; an answer that is still wrong is left out and nothing is stored for that text.
 // Nothing here imports the remote driver.
+import { LANGUAGE_NAMES, detectLanguage } from '../language'
 
 // The texts the local driver works on: a title is left alone (a small model changes what a job title means) and so is a text too short to say anything.
 export const MIN_LOCAL_TEXT = 15
@@ -13,10 +14,22 @@ export function isLocalCandidate(t: { field: string; text: string }): boolean {
 
 const FIELD_WORDS: Record<string, string> = { summary: 'summary', description: 'description' }
 
+// The language rule, said in the question: always, and by name when the text can be placed (a small model asked in English about a German text answers in English unless it is told).
+function languageLines(text: string): string[] {
+  const lang = detectLanguage(text)
+  const name = lang ? LANGUAGE_NAMES[lang] : ''
+  return [
+    lang
+      ? `This text is ${name}. Write the improved text in ${name}, the language of the text, even though these instructions are in English. Never translate.`
+      : 'Write the improved text in the SAME language as the text, even though these instructions are in English. Never translate.',
+  ]
+}
+
 export function buildLocalPrompt(t: { field: string; label: string; context?: string; text: string }, focus: string): string {
   const wanted = focus.trim()
   return [
     `Improve the wording of this ${FIELD_WORDS[t.field] ?? 'text'}${t.label ? ` (${t.label}${t.context ? `, ${t.context}` : ''})` : ''}.`,
+    ...languageLines(t.text),
     'Rules: keep the language of the text. Keep every fact, number, percentage, name, date and technology. Add nothing the text does not say. Fix typos and grammar and make clumsy or wordy sentences read well.',
     'Keep the line breaks. Every line that starts with "- " must stay a line that starts with "- ": never drop a bullet point and never merge several into one.',
     ...(wanted ? [`The person asked for this (a wish about the wording only): ${JSON.stringify(wanted)}`] : []),
@@ -63,6 +76,14 @@ export function checkAnswer(before: string, answer: string): Verdict {
   if (text.length > MAX_TEXT) return { ok: false, reason: `the answer is longer than ${String(MAX_TEXT)} characters` }
   if (bulletLines(text) < bulletLines(before))
     return { ok: false, reason: 'a bullet point was dropped or merged: keep every line that starts with "- "' }
+  const want = detectLanguage(before)
+  const got = detectLanguage(text)
+  if (want && got && want !== got) {
+    return {
+      ok: false,
+      reason: `the answer is ${LANGUAGE_NAMES[got]} but the text is ${LANGUAGE_NAMES[want]}: write it in ${LANGUAGE_NAMES[want]}, the language of the text, and never translate`,
+    }
+  }
   if (text.length < before.trim().length * 0.5) return { ok: false, reason: 'the answer is much shorter than the text: keep every fact' }
   if (text.length > before.trim().length * 2.5) return { ok: false, reason: 'the answer is much longer than the text: add nothing' }
   return { ok: true, text }

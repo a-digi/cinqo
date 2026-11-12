@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { OptimizeSubjectKind } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import type { OptimizeRun, OptimizeSubjectKind } from '../api'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { resolveAiOverride, type AiOverride } from '../Cinqo/Platform/aiOverride'
 import type { Platform } from '../Cinqo/Platform/platformRepository'
@@ -8,6 +8,7 @@ import { SETTINGS_PATH } from '../paths'
 import { SparkleIcon } from '../Shared/Icons/icons'
 import { inputClass } from '../Shared/inputClass'
 import { Modal } from '../Shared/Modal/Modal'
+import { CHIP_FADE_MS, CHIP_SHOW_MS, appliedText } from './motion'
 import { OptimizeReview } from './OptimizeReview'
 import { approvedCount, optimizeView, reviewLabel } from './optimizeRules'
 import { useOptimizeRuns } from './useOptimizeRuns'
@@ -15,6 +16,9 @@ import { useOptimizeRuns } from './useOptimizeRuns'
 // The "Optimize with AI" button of a profile or of a target role, its dialog and the review of what the AI suggested (plan 258). The dialog starts from the Career AI settings (`ai`)
 // and lets the person pick another platform and model for this run only (the same picker as "Create CV with AI"); the pick is not saved. The button says what is going on: working,
 // suggestions waiting for the review, a failed run (with Dismiss). onApplied is called after at least one suggestion was approved, so the page reads its texts again.
+// Step 7: the working sign pulses (with a progress bar for a code-driven run), the button changes with a fade, the review button pops in, and a chip says how many changes were applied.
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-1'
+
 export function OptimizeWithAi({
   subjectKind,
   subjectId,
@@ -38,6 +42,36 @@ export function OptimizeWithAi({
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const [override, setOverride] = useState<AiOverride | null>(null)
+  // "3 changes applied": shown for a few seconds after approvals, the last moment fading out.
+  const [applied, setApplied] = useState<{ count: number; fading: boolean } | null>(null)
+  const chipTimers = useRef<number[]>([])
+  useEffect(
+    () => () => {
+      chipTimers.current.forEach((t) => {
+        window.clearTimeout(t)
+      })
+    },
+    [],
+  )
+  function showApplied(count: number) {
+    chipTimers.current.forEach((t) => {
+      window.clearTimeout(t)
+    })
+    setApplied((prev) => ({ count: (prev?.count ?? 0) + count, fading: false }))
+    chipTimers.current = [
+      window.setTimeout(() => {
+        setApplied((prev) => (prev ? { ...prev, fading: true } : prev))
+      }, CHIP_SHOW_MS - CHIP_FADE_MS),
+      window.setTimeout(() => {
+        setApplied(null)
+      }, CHIP_SHOW_MS),
+    ]
+  }
+  // The review stays on screen after its run is gone (its last cards are leaving, then "All suggestions decided" shows): the last run it showed is kept, without suggestions.
+  const lastRun = useRef<OptimizeRun | null>(null)
+  if (state.view === 'review') lastRun.current = state.run
+  const reviewRun: OptimizeRun | null =
+    state.view === 'review' ? state.run : lastRun.current ? { ...lastRun.current, suggestions: [] } : null
   const choice = resolveAiOverride({ platform: ai.platform, model: ai.model }, platforms, override)
   const word = subjectKind === 'profile' ? 'profile' : 'target role'
   const aiText = choice.platform ? `${choice.platform.name}${choice.model ? ` · ${choice.model}` : ''}` : ''
@@ -85,42 +119,71 @@ export function OptimizeWithAi({
       <div className="flex flex-wrap items-center justify-end gap-2">
         {state.view === 'review' ? (
           <button
+            key="review"
             type="button"
             onClick={() => {
               setReviewOpen(true)
             }}
-            className="flex shrink-0 items-center gap-1.5 rounded-md bg-purple-700 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-800"
+            className={`opt-pop opt-lift flex shrink-0 items-center gap-1.5 rounded-md bg-purple-700 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-800 ${FOCUS_RING}`}
           >
             <SparkleIcon />
             {reviewLabel(state.count)}
           </button>
         ) : (
           <button
+            key="start"
             type="button"
             disabled={disabledReason !== ''}
             title={disabledReason || `Let the AI suggest better wording for this ${word}'s texts`}
             onClick={() => {
               setDialogOpen(true)
             }}
-            className="flex shrink-0 items-center gap-1.5 rounded-md border border-purple-200 bg-white px-3.5 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`${state.view === 'working' ? 'opt-working' : 'opt-lift'} flex shrink-0 items-center gap-1.5 rounded-md border border-purple-200 bg-white px-3.5 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
           >
-            <SparkleIcon />
-            {state.view === 'working'
-              ? runs.progress && runs.progress.total > 0
-                ? `Optimizing… ${String(runs.progress.done)} of ${String(runs.progress.total)}`
-                : 'Optimizing…'
-              : 'Optimize with AI'}
+            <span className={state.view === 'working' ? 'opt-icon-pulse' : 'inline-flex'}>
+              <SparkleIcon />
+            </span>
+            <span key={`${state.view}-${String(runs.progress?.done ?? '')}`} className="opt-fade-in">
+              {state.view === 'working'
+                ? runs.progress && runs.progress.total > 0
+                  ? `Optimizing… ${String(runs.progress.done)} of ${String(runs.progress.total)}`
+                  : 'Optimizing…'
+                : 'Optimize with AI'}
+            </span>
           </button>
         )}
       </div>
+      {state.view === 'working' && runs.progress && runs.progress.total > 0 && (
+        <div
+          role="progressbar"
+          aria-label="Optimization progress"
+          aria-valuemin={0}
+          aria-valuemax={runs.progress.total}
+          aria-valuenow={runs.progress.done}
+          className="h-1 w-full overflow-hidden rounded-full bg-purple-100"
+        >
+          <div
+            className="opt-bar h-full rounded-full bg-purple-500"
+            style={{ width: `${String(Math.round((runs.progress.done / runs.progress.total) * 100))}%` }}
+          />
+        </div>
+      )}
+      {applied && (
+        <p
+          role="status"
+          className={`opt-pop rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 ${applied.fading ? 'opt-fade-out' : ''}`}
+        >
+          {appliedText(applied.count)}
+        </p>
+      )}
       {state.view === 'review' && state.staleCount > 0 && (
-        <p className="text-xs text-amber-700">
+        <p className="opt-fade-in text-xs text-amber-700">
           {state.staleCount === 1 ? '1 suggestion is out of date' : `${String(state.staleCount)} suggestions are out of date`}: its text
           changed.
         </p>
       )}
       {state.view === 'failed' && (
-        <p role="alert" className="max-w-sm text-right text-xs text-red-700">
+        <p role="alert" className="opt-fade-in max-w-sm text-right text-xs text-red-700">
           The optimization failed: {state.run.error ?? 'no reason was recorded'}{' '}
           <button
             type="button"
@@ -134,7 +197,7 @@ export function OptimizeWithAi({
         </p>
       )}
       {runs.notice && (
-        <p role="status" className="max-w-sm text-right text-xs text-gray-600">
+        <p role="status" className="opt-fade-in max-w-sm text-right text-xs text-gray-600">
           {runs.notice}{' '}
           <button type="button" onClick={runs.clearNotice} className="underline">
             OK
@@ -214,23 +277,27 @@ export function OptimizeWithAi({
             disabled={starting || !choice.platform}
             className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
-            <SparkleIcon />
+            {starting ? <span className="opt-spin" aria-hidden="true" /> : <SparkleIcon />}
             {starting ? 'Starting…' : 'Start'}
           </button>
         </div>
       </Modal>
 
-      {state.view === 'review' && (
+      {reviewOpen && reviewRun && (
         <OptimizeReview
-          open={reviewOpen}
-          run={state.run}
+          open
+          run={reviewRun}
           subjectName={subjectName}
           onClose={() => {
             setReviewOpen(false)
           }}
           onDecide={async (decisions) => {
-            const decided = await runs.decide(state.run.id, decisions)
-            if (approvedCount(decisions, decided) > 0) onApplied()
+            const decided = await runs.decide(reviewRun.id, decisions)
+            const approved = approvedCount(decisions, decided)
+            if (approved > 0) {
+              showApplied(approved)
+              onApplied()
+            }
             return decided
           }}
         />
