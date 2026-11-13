@@ -28,3 +28,7 @@ export function stripScrollFor(scrollLeft: number, viewWidth: number, contentWid
   const centred = itemLeft + itemWidth / 2 - viewWidth / 2
   return Math.max(0, Math.min(centred, Math.max(0, contentWidth - viewWidth)))
 }
+
+// A section that a click scrolled to sits at its scroll margin give or take a fraction of a pixel (96.19 was seen live in the landing look): this much of slack keeps the chapter that was
+// clicked the current one. Used by the showcase look (the landing look has its own copy of the number).
+export const SETTLE_PX = 8

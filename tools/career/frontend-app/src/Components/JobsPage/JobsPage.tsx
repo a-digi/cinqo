@@ -1,4 +1,3 @@
-import { AppLink } from '../../Shared/AppLink/AppLink'
 import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -57,7 +56,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { GUIDE_PATH, JOBS_PATH, JOB_DETAILS_PATH, VIEW_COMPANY_PATH } from '../../paths'
+import { JOBS_PATH, JOB_DETAILS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { PAGE_ACCENT } from './jobsTheme'
 import { JobPlatformCard, JobStatCards } from './JobStatsStrip'
 import { useJobStats } from './useJobStats'
@@ -104,6 +103,11 @@ import { canOpenOriginal, detailsState } from './manualJob'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { HEADER_BUTTON } from './Info/jobInfoData'
+import { jobInfoEntry, jobsPageView, type JobFacts } from './Info/jobInfoRules'
+import { JobInfoCard } from './Info/JobInfoCard'
+import { JobInfoModal } from './Info/JobInfoModal'
+import { JobSummary } from './Info/JobSummary'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
@@ -141,6 +145,8 @@ export function JobsPage() {
   const [reloadTick, setReloadTick] = useState(0)
   const [companies, setCompanies] = useState<Company[]>([])
   const [portals, setPortals] = useState<Portal[]>([])
+  // Whether the list of platforms was read (the summary of an empty Jobs page names the next step from it: plan 269).
+  const [portalsLoaded, setPortalsLoaded] = useState(false)
   const [locations, setLocations] = useState<string[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
@@ -174,6 +180,14 @@ export function JobsPage() {
 
   // "Add job" (step 97) — the modal for a job added by hand.
   const [addOpen, setAddOpen] = useState(false)
+  // "How jobs work" (plan 269): the infographic, and which page this is: with no job at all only a summary that leads to it (no table, no cards, no filters), the usual page otherwise.
+  const [infoOpen, setInfoOpen] = useState(false)
+  const pageView = jobsPageView(jobStats.state, jobStats.stats?.total ?? 0)
+  const infoEntry = jobInfoEntry(pageView, jobStats.state)
+  const infoFacts: JobFacts = {
+    platforms: portalsLoaded ? portals.length : null,
+    stats: jobStats.stats ? { total: jobStats.stats.total, matched: jobStats.stats.matched } : null,
+  }
 
   // "Generate CV PDF" (step XX) own state — cvPickerJob mirrors
   // matchPickerJob exactly: the job a profile is currently being
@@ -333,7 +347,10 @@ export function JobsPage() {
         setError(err instanceof Error ? err.message : String(err))
       })
     fetchPortals()
-      .then(setPortals)
+      .then((list) => {
+        setPortals(list)
+        setPortalsLoaded(true)
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -1181,325 +1198,363 @@ export function JobsPage() {
       <div className="min-w-0">
         {/* The page has no visible header any more (plan 236); its heading stays for a screen reader. */}
         <h1 className="sr-only">Saved jobs</h1>
-        <JobStatCards jobStats={jobStats} />
+        {pageView !== 'summary' && <JobStatCards jobStats={jobStats} />}
         <RunningCrawlsStrip runs={runningCrawls} />
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <div className="career-enter career-delay-1 min-w-0 flex-1">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAddOpen(true)
-                }}
-                className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-              >
-                <PlusIcon />
-                Add job
-              </button>
-              <button
-                type="button"
-                disabled={matchingUnmatched}
-                onClick={handleMatchUnmatched}
-                title="Give every job that has no match its best match now (manual engine, no AI). This also happens by itself every few minutes."
-                className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
-              >
-                {matchingUnmatched ? 'Matching…' : 'Match unmatched'}
-              </button>
-              <button
-                type="button"
-                disabled={startingMissing || recrawl.running || (missing !== null && missing.jobIds.length === 0)}
-                onClick={handleCrawlMissing}
-                title={missingTitle(missing, recrawl.running)}
-                className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
-              >
-                {missingLabel(missing, startingMissing || recrawl.running)}
-              </button>
-              <HelpLink page={JOBS_PATH} className="ml-auto" />
-            </div>
-
-            {/* Search, sort, page size and the filters toggle: their own row below the buttons, on its own background. */}
-            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-100/80 px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={queryInput}
-                  onChange={(e) => {
-                    setQueryInput(e.target.value)
-                  }}
-                  placeholder="Search title, company, description…"
-                  className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                />
-                <Dropdown
-                  placeholder="Newest first"
-                  options={[
-                    { value: 'newest', label: 'Newest first' },
-                    { value: 'match', label: 'Best match first' },
-                  ]}
-                  value={sort}
-                  onChange={handleSortChange}
-                />
-                <label className="flex items-center gap-2 text-sm text-gray-600">
-                  Show
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={limitInput}
-                    onChange={(e) => {
-                      setLimitInput(e.target.value)
-                    }}
-                    onFocus={() => {
-                      limitFocused.current = true
-                    }}
-                    onBlur={() => {
-                      limitFocused.current = false
-                      commitLimit()
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitLimit()
-                    }}
-                    aria-label={`Jobs per page, ${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)}`}
-                    title={`How many jobs to show per page (${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)})`}
-                    className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                  />
-                  per page
-                </label>
-                <button
-                  type="button"
-                  aria-expanded={showFilters}
-                  onClick={() => {
-                    setShowFilters((prev) => !prev)
-                  }}
-                  className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                >
-                  <FilterIcon />
-                  Filters
-                </button>
-              </div>
-
-              {activeFilters.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {activeFilters.map((filter) => (
-                    <span
-                      key={filter.key}
-                      className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
-                    >
-                      {filter.label}
-                      <button
-                        type="button"
-                        onClick={filter.onClear}
-                        aria-label={`Clear ${filter.label}`}
-                        className="text-gray-400 hover:text-gray-700"
-                      >
-                        <XIcon />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {showFilters && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {locations.length > 0 && (
-                    <Dropdown
-                      placeholder="Any location"
-                      options={[
-                        { value: '', label: 'Any location' },
-                        ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
-                      ]}
-                      value={location}
-                      onChange={handleLocationFilterChange}
-                      searchable
-                    />
-                  )}
-                  {companies.length > 0 && (
-                    <Dropdown
-                      multiple
-                      placeholder="Any company"
-                      options={companies.map((c) => ({ value: c.id, label: c.name }))}
-                      value={companyIds}
-                      onChange={handleCompanyFilterChange}
-                      searchable
-                    />
-                  )}
-                  {portals.length > 0 && (
-                    <Dropdown
-                      placeholder="Any platform"
-                      options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-                      value={portalId}
-                      onChange={handlePortalFilterChange}
-                      searchable
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-            {recruiterNotice && (
-              <p role="status" className="mb-2 text-sm text-green-700">
-                {recruiterNotice}
-              </p>
-            )}
-            {unmatchedNotice && (
-              <p role="status" className="mb-2 text-sm text-green-700">
-                {unmatchedNotice}
-              </p>
-            )}
-
-            <RecrawlPanel recrawl={recrawl} />
-            {batchDeleteNotice && (
-              <div className="mb-3 flex items-start justify-between gap-3 text-sm">
-                <p role={batchDeleteNotice.ok ? 'status' : 'alert'} className={batchDeleteNotice.ok ? 'text-green-700' : 'text-red-700'}>
-                  {batchDeleteNotice.text}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBatchDeleteNotice(null)
-                  }}
-                  className="shrink-0 text-xs text-gray-500 underline hover:text-gray-700"
-                >
-                  Close
-                </button>
-              </div>
-            )}
-            <RecrawlSelectionBar
-              selected={[...selected.values()]}
-              busy={recrawl.running}
-              deleting={batchDeleting}
-              onRecrawl={() => {
-                void recrawl.start([...selected.keys()])
+        {pageView === 'summary' ? (
+          <div className="career-enter career-delay-1">
+            {error !== '' && <p className="mb-3 text-sm text-red-700">{error}</p>}
+            <JobSummary
+              facts={infoFacts}
+              onOpen={() => {
+                setInfoOpen(true)
               }}
-              onDelete={() => {
-                setConfirmBatchDelete(true)
-              }}
-              onClear={() => {
-                setSelected(new Map())
+              onAddJob={() => {
+                setAddOpen(true)
               }}
             />
-
-            {jobStats.state === 'ready' && jobStats.stats.total === 0 && (
-              <p className="mb-3 rounded-3xl border border-gray-100 bg-gray-50 p-4 text-center text-sm text-gray-600">
-                No saved jobs yet. New to the Career tool?{' '}
-                <AppLink href={GUIDE_PATH} className="font-medium text-blue-700 hover:underline">
-                  Getting started →
-                </AppLink>
-              </p>
-            )}
-
-            <div
-              className="relative overflow-hidden rounded-3xl border shadow-sm"
-              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
-            >
-              <div
-                className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
-                style={{ borderColor: PAGE_ACCENT.from }}
-              />
-              <div className="relative overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr>
-                      <th className="w-8 bg-blue-50/70 p-3 pr-0">
-                        <input
-                          ref={headerCheckbox}
-                          type="checkbox"
-                          aria-label="Select the jobs on this page"
-                          checked={pageSelection === 'all'}
-                          disabled={jobs.length === 0}
-                          onChange={togglePageRows}
-                        />
-                      </th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Job</th>
-                      <th className="w-44 bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">
-                        Match
-                      </th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
-                      <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jobs.map((job) => {
-                      const cell = companyCell(job, companyNames, VIEW_COMPANY_PATH)
-                      return (
-                        <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
-                          <td className="w-8 border-b border-blue-50 p-3 pr-0">
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${job.title}`}
-                              checked={selected.has(job.id)}
-                              onChange={() => {
-                                toggleRow(job)
-                              }}
-                            />
-                          </td>
-                          <td className="border-b border-blue-50 p-3 text-gray-900">
-                            <JobTitleCell job={job} cell={cell} missingState={missing?.states[job.id]} onUnlink={handleUnlink} />
-                          </td>
-                          <td className="w-44 border-b border-blue-50 p-3">
-                            {manualRunning.has(job.id) ? (
-                              <span className="text-xs text-gray-500">Matching…</span>
-                            ) : job.matchStatus === 'matching' ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleCheckMatchProgress(job)
-                                }}
-                                title="Open the chat window to watch the AI work on this job's own match"
-                                className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
-                              >
-                                <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-                                  <RobotIcon />
-                                  <Typewriter text="Matching…" />
-                                </span>
-                              </button>
-                            ) : job.matchStatus === 'failed' ? (
-                              <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
-                                Failed
-                              </span>
-                            ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                              <MatchScoreBar
-                                showEngine={false}
-                                score={job.matchScore}
-                                skills={job.matchedSkills}
-                                jobTitle={job.title}
-                                kind={job.matchKind}
-                                breakdown={job.matchBreakdown}
-                              />
-                            ) : (
-                              <span className="text-xs text-gray-300">—</span>
-                            )}
-                          </td>
-                          <td className="border-b border-blue-50 p-3">
-                            {job.postedAt ? (
-                              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
-                            ) : null}
-                          </td>
-                          <td className="border-b border-blue-50 p-3 text-right">
-                            <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <Pagination page={page} pageSize={limit} total={total} onPageChange={handlePageChange} />
           </div>
+        ) : (
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+            <div className="career-enter career-delay-1 min-w-0 flex-1">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddOpen(true)
+                  }}
+                  className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+                >
+                  <PlusIcon />
+                  Add job
+                </button>
+                <button
+                  type="button"
+                  disabled={matchingUnmatched}
+                  onClick={handleMatchUnmatched}
+                  title="Give every job that has no match its best match now (manual engine, no AI). This also happens by itself every few minutes."
+                  className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {matchingUnmatched ? 'Matching…' : 'Match unmatched'}
+                </button>
+                <button
+                  type="button"
+                  disabled={startingMissing || recrawl.running || (missing !== null && missing.jobIds.length === 0)}
+                  onClick={handleCrawlMissing}
+                  title={missingTitle(missing, recrawl.running)}
+                  className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {missingLabel(missing, startingMissing || recrawl.running)}
+                </button>
+                {infoEntry === 'button' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInfoOpen(true)
+                    }}
+                    className="rounded-md border px-3.5 py-2 text-sm font-medium hover:bg-blue-50"
+                    style={{ borderColor: PAGE_ACCENT.from, color: PAGE_ACCENT.text }}
+                  >
+                    {HEADER_BUTTON}
+                  </button>
+                )}
+                <HelpLink page={JOBS_PATH} className="ml-auto" />
+              </div>
 
-          {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
-              own total, and how many jobs on this page have a completed match or CV. */}
-          <aside className="career-enter career-delay-2 w-full shrink-0 career-rail-sticky lg:w-72">
-            <JobPlatformCard jobStats={jobStats} />
-            <div className={jobStats.state === 'ready' ? 'mt-8' : ''}>
-              <PageTips page="jobs" orientation="vertical" />
+              {/* Search, sort, page size and the filters toggle: their own row below the buttons, on its own background. */}
+              <div className="mb-4 rounded-xl border border-gray-200 bg-gray-100/80 px-3 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={queryInput}
+                    onChange={(e) => {
+                      setQueryInput(e.target.value)
+                    }}
+                    placeholder="Search title, company, description…"
+                    className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  />
+                  <Dropdown
+                    placeholder="Newest first"
+                    options={[
+                      { value: 'newest', label: 'Newest first' },
+                      { value: 'match', label: 'Best match first' },
+                    ]}
+                    value={sort}
+                    onChange={handleSortChange}
+                  />
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    Show
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={limitInput}
+                      onChange={(e) => {
+                        setLimitInput(e.target.value)
+                      }}
+                      onFocus={() => {
+                        limitFocused.current = true
+                      }}
+                      onBlur={() => {
+                        limitFocused.current = false
+                        commitLimit()
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitLimit()
+                      }}
+                      aria-label={`Jobs per page, ${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)}`}
+                      title={`How many jobs to show per page (${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)})`}
+                      className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                    />
+                    per page
+                  </label>
+                  <button
+                    type="button"
+                    aria-expanded={showFilters}
+                    onClick={() => {
+                      setShowFilters((prev) => !prev)
+                    }}
+                    className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                  >
+                    <FilterIcon />
+                    Filters
+                  </button>
+                </div>
+
+                {activeFilters.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {activeFilters.map((filter) => (
+                      <span
+                        key={filter.key}
+                        className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+                      >
+                        {filter.label}
+                        <button
+                          type="button"
+                          onClick={filter.onClear}
+                          aria-label={`Clear ${filter.label}`}
+                          className="text-gray-400 hover:text-gray-700"
+                        >
+                          <XIcon />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {showFilters && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {locations.length > 0 && (
+                      <Dropdown
+                        placeholder="Any location"
+                        options={[
+                          { value: '', label: 'Any location' },
+                          ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+                        ]}
+                        value={location}
+                        onChange={handleLocationFilterChange}
+                        searchable
+                      />
+                    )}
+                    {companies.length > 0 && (
+                      <Dropdown
+                        multiple
+                        placeholder="Any company"
+                        options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                        value={companyIds}
+                        onChange={handleCompanyFilterChange}
+                        searchable
+                      />
+                    )}
+                    {portals.length > 0 && (
+                      <Dropdown
+                        placeholder="Any platform"
+                        options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+                        value={portalId}
+                        onChange={handlePortalFilterChange}
+                        searchable
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+              {recruiterNotice && (
+                <p role="status" className="mb-2 text-sm text-green-700">
+                  {recruiterNotice}
+                </p>
+              )}
+              {unmatchedNotice && (
+                <p role="status" className="mb-2 text-sm text-green-700">
+                  {unmatchedNotice}
+                </p>
+              )}
+
+              <RecrawlPanel recrawl={recrawl} />
+              {batchDeleteNotice && (
+                <div className="mb-3 flex items-start justify-between gap-3 text-sm">
+                  <p role={batchDeleteNotice.ok ? 'status' : 'alert'} className={batchDeleteNotice.ok ? 'text-green-700' : 'text-red-700'}>
+                    {batchDeleteNotice.text}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchDeleteNotice(null)
+                    }}
+                    className="shrink-0 text-xs text-gray-500 underline hover:text-gray-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+              <RecrawlSelectionBar
+                selected={[...selected.values()]}
+                busy={recrawl.running}
+                deleting={batchDeleting}
+                onRecrawl={() => {
+                  void recrawl.start([...selected.keys()])
+                }}
+                onDelete={() => {
+                  setConfirmBatchDelete(true)
+                }}
+                onClear={() => {
+                  setSelected(new Map())
+                }}
+              />
+
+              <div
+                className="relative overflow-hidden rounded-3xl border shadow-sm"
+                style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
+              >
+                <div
+                  className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
+                  style={{ borderColor: PAGE_ACCENT.from }}
+                />
+                <div className="relative overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th className="w-8 bg-blue-50/70 p-3 pr-0">
+                          <input
+                            ref={headerCheckbox}
+                            type="checkbox"
+                            aria-label="Select the jobs on this page"
+                            checked={pageSelection === 'all'}
+                            disabled={jobs.length === 0}
+                            onChange={togglePageRows}
+                          />
+                        </th>
+                        <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Job</th>
+                        <th className="w-44 bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">
+                          Match
+                        </th>
+                        <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
+                        <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobs.map((job) => {
+                        const cell = companyCell(job, companyNames, VIEW_COMPANY_PATH)
+                        return (
+                          <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                            <td className="w-8 border-b border-blue-50 p-3 pr-0">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${job.title}`}
+                                checked={selected.has(job.id)}
+                                onChange={() => {
+                                  toggleRow(job)
+                                }}
+                              />
+                            </td>
+                            <td className="border-b border-blue-50 p-3 text-gray-900">
+                              <JobTitleCell job={job} cell={cell} missingState={missing?.states[job.id]} onUnlink={handleUnlink} />
+                            </td>
+                            <td className="w-44 border-b border-blue-50 p-3">
+                              {manualRunning.has(job.id) ? (
+                                <span className="text-xs text-gray-500">Matching…</span>
+                              ) : job.matchStatus === 'matching' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleCheckMatchProgress(job)
+                                  }}
+                                  title="Open the chat window to watch the AI work on this job's own match"
+                                  className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                                >
+                                  <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                                    <RobotIcon />
+                                    <Typewriter text="Matching…" />
+                                  </span>
+                                </button>
+                              ) : job.matchStatus === 'failed' ? (
+                                <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
+                                  Failed
+                                </span>
+                              ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
+                                <MatchScoreBar
+                                  showEngine={false}
+                                  score={job.matchScore}
+                                  skills={job.matchedSkills}
+                                  jobTitle={job.title}
+                                  kind={job.matchKind}
+                                  breakdown={job.matchBreakdown}
+                                />
+                              ) : (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
+                            </td>
+                            <td className="border-b border-blue-50 p-3">
+                              {job.postedAt ? (
+                                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
+                              ) : null}
+                            </td>
+                            <td className="border-b border-blue-50 p-3 text-right">
+                              <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <Pagination page={page} pageSize={limit} total={total} onPageChange={handlePageChange} />
             </div>
-          </aside>
-        </div>
+
+            {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
+              own total, and how many jobs on this page have a completed match or CV. */}
+            <aside className="career-enter career-delay-2 w-full shrink-0 career-rail-sticky lg:w-72">
+              {infoEntry === 'button' && (
+                <JobInfoCard
+                  onOpen={() => {
+                    setInfoOpen(true)
+                  }}
+                />
+              )}
+              <JobPlatformCard jobStats={jobStats} />
+              <div className={jobStats.state === 'ready' ? 'mt-8' : ''}>
+                <PageTips page="jobs" orientation="vertical" />
+              </div>
+            </aside>
+          </div>
+        )}
       </div>
 
+      <JobInfoModal
+        open={infoOpen}
+        onClose={() => {
+          setInfoOpen(false)
+        }}
+        facts={infoFacts}
+        onAddJob={() => {
+          setInfoOpen(false)
+          setAddOpen(true)
+        }}
+      />
       <AddJobModal
         open={addOpen}
         onClose={() => {

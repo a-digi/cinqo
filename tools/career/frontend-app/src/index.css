@@ -1250,3 +1250,65 @@
     animation: none !important;
   }
 }
+
+/* The showcase look of an infographic (plan 269): the hero rises in piece by piece, a pinned stage's steps and a segmented control's panels fade, a floating picture drifts. All of it
+   is off under prefers-reduced-motion, where everything is simply there. */
+.showcase-rise {
+  opacity: 0;
+  animation: showcase-rise 800ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 140ms + 100ms) forwards;
+}
+.showcase-step {
+  transition: opacity 400ms ease;
+}
+.showcase-panel {
+  animation: showcase-fade 500ms ease-out;
+}
+.showcase-float {
+  animation: showcase-float 6s ease-in-out calc(var(--i, 0) * -1.3s) infinite;
+}
+@keyframes showcase-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes showcase-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes showcase-float {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .showcase-rise {
+    opacity: 1;
+    animation: none !important;
+  }
+  .showcase-step,
+  .showcase-panel,
+  .showcase-float {
+    transition: none;
+    animation: none !important;
+  }
+}
+
+/* The ring of a match score in the showcase look (plan 269): filled to --ring, on a track. No SVG: a conic gradient. */
+.showcase-ring {
+  background: conic-gradient(var(--fill) var(--ring), var(--track) 0);
+}
