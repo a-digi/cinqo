@@ -109,3 +109,7 @@ plan/
 /tools/testdata/
 
 cinqo-tools
+
+# Test tool
+
+tools/namako
