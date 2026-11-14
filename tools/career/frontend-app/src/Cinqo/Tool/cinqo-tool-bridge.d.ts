@@ -84,6 +84,9 @@ interface CinqoToolBridge {
   registerRoute(route: CinqoToolRoute): void
   // Absent in a host older than plan 270: call it only after checking it is a function.
   registerBreadcrumbs?(breadcrumbs: CinqoBreadcrumbs): void
+  // Replaces the fixed label of item `index` (0 = first, 0 to 7) of the trail shown now with the page's own words (a job's title). The path
+  // stays; the next address change drops it. Absent in a host older than plan 270 step 7: check it is a function.
+  setBreadcrumbLabel?(index: number, label: string): void
   navigate(path: string): void
   // Opens the main app's floating chat widget (if mounted) showing
   // this conversation, resuming its live turn watch automatically if

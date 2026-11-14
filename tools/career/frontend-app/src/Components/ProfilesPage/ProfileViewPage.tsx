@@ -32,6 +32,7 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
 import { CV_LIST_CAP, countsText, cvListMayBeCut, cvsOfProfile, lifetimeText } from './profileViewRules'
+import { useBreadcrumbLabel } from '../../useBreadcrumbLabel'
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
 
@@ -46,6 +47,7 @@ function formatDate(value: string): string {
 export function ProfileViewPage() {
   const profileId = new URLSearchParams(window.location.search).get('id') ?? ''
   const [profile, setProfile] = useState<Profile | null>(null)
+  useBreadcrumbLabel(1, profile ? profileLabel(profile) : undefined)
   // Reads the profile again (its default photo may have changed after a photo was removed).
   const refreshProfile = useCallback(() => {
     fetchProfiles()

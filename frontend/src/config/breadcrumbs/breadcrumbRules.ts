@@ -61,6 +61,13 @@ export function isValidRegistrationPath(path: unknown): path is string {
   return new Set(names).size === names.length
 }
 
+// A label as it is drawn: trimmed and cut to MAX_LABEL; null when it is not a string or nothing is left.
+export function cleanLabel(label: unknown): string | null {
+  if (typeof label !== 'string') return null
+  const text = label.trim().slice(0, MAX_LABEL).trim()
+  return text === '' ? null : text
+}
+
 // What may be drawn from whatever a source handed over. An item that is not an object, has no text, or has a path that
 // is not a site-internal address is dropped; a label is trimmed and cut to MAX_LABEL; when more than MAX_ITEMS remain the
 // LAST MAX_ITEMS are kept (the end of the trail is the page the person is on). Returns new objects, never the input's.
@@ -71,8 +78,8 @@ export function cleanItems(input: unknown): BreadcrumbItem[] {
     if (typeof raw !== 'object' || raw === null) continue
     const { label, path } = raw as { label?: unknown; path?: unknown }
     if (typeof label !== 'string') continue
-    const text = label.trim().slice(0, MAX_LABEL).trim()
-    if (text === '') continue
+    const text = cleanLabel(label)
+    if (text === null) continue
     if (path === undefined) {
       out.push({ label: text })
       continue
@@ -128,4 +135,51 @@ export function addRegistration(
     return { list, reason: `"${registration.path}" already has a trail (the first registration wins)` }
   }
   return { list: [...list, { path: registration.path, items: registration.items }], reason: null }
+}
+
+// Labels a page learned after it loaded (plan 270, step 7): the page's own words for items of its trail, by position in the trail as
+// drawn (0 = first). They belong to one full address (path and query, because a tool page names its item in the query): any address change drops them.
+export interface LabelState {
+  address: string
+  labels: Readonly<Partial<Record<number, string>>>
+}
+
+export const NO_LABELS: LabelState = { address: '', labels: {} }
+
+export function isValidLabelIndex(index: unknown): index is number {
+  return Number.isInteger(index) && (index as number) >= 0 && (index as number) < MAX_ITEMS
+}
+
+// The state after a page sets one label. A bad index or label changes nothing (`reason` says why). A label for another address than
+// the state's replaces the whole state (the old page's labels are gone); the same label again returns the same state object.
+export function withLabel(
+  state: LabelState,
+  address: string,
+  index: unknown,
+  label: unknown,
+): { state: LabelState; reason: string | null } {
+  if (!isValidLabelIndex(index)) return { state, reason: `index must be a whole number from 0 to ${MAX_ITEMS - 1}` }
+  const text = cleanLabel(label)
+  if (text === null) return { state, reason: 'label must be a text with at least one visible character' }
+  const same = state.address === address
+  if (same && state.labels[index] === text) return { state, reason: null }
+  return { state: { address, labels: { ...(same ? state.labels : {}), [index]: text } }, reason: null }
+}
+
+// The trail with the labels of the page the person is on put in: an index past the end changes nothing, a path stays, and labels of
+// another address are ignored. Returns the same array when nothing is replaced.
+export function applyLabels(trail: readonly BreadcrumbItem[], state: LabelState, address: string): BreadcrumbItem[] {
+  if (state.address !== address) return trail as BreadcrumbItem[]
+  const out: BreadcrumbItem[] = []
+  let changed = false
+  for (const [i, item] of trail.entries()) {
+    const label = state.labels[i]
+    if (label === undefined || label === item.label) {
+      out.push(item)
+      continue
+    }
+    changed = true
+    out.push({ ...item, label })
+  }
+  return changed ? out : (trail as BreadcrumbItem[])
 }

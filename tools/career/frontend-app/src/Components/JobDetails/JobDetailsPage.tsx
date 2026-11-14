@@ -21,6 +21,7 @@ import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 import { writeAddress } from '../../Shared/AddressState/writeAddress'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { commentScopeFor, jobDetailsSearch, profileIdFromSearch } from './jobProfileScope'
+import { useBreadcrumbLabel } from '../../useBreadcrumbLabel'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -52,6 +53,7 @@ function FactChip({ icon, children }: { icon: React.ReactNode; children: React.R
 // plan/ai/tools/career/step-XX-jobs-page-icon-actions-and-details-page.md.
 export function JobDetailsPage() {
   const [job, setJob] = useState<Job | null>(null)
+  useBreadcrumbLabel(1, job?.title)
   const [error, setError] = useState('')
   // A recrawl of this job (step 148): when a job's crawl finishes the job is read again so the new description shows. The batch is
   // remembered under this job's own key, so a reload while it runs picks it up again.

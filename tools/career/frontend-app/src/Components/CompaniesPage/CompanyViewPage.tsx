@@ -9,6 +9,7 @@ import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { COMPANIES_PATH, JOBS_PATH, JOB_DETAILS_PATH, RECRUITERS_PATH } from '../../paths'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { plural } from './companyStats'
+import { useBreadcrumbLabel } from '../../useBreadcrumbLabel'
 
 // How many of the company's jobs the page asks for at once; a company with more
 // shows the first ones and a note pointing at the Jobs page, which has paging.
@@ -26,6 +27,7 @@ function formatDate(value: string): string {
 export function CompanyViewPage() {
   const companyId = new URLSearchParams(window.location.search).get('id') ?? ''
   const [company, setCompany] = useState<Company | null>(null)
+  useBreadcrumbLabel(1, company?.name)
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)

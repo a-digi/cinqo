@@ -200,6 +200,11 @@ export interface ToolBridge {
   // or bad items are refused with a console error. A host older than this feature has no such member: call it as
   // window.__cinqoToolBridge.registerBreadcrumbs?.({ ... }).
   registerBreadcrumbs(breadcrumbs: ToolBreadcrumbs): void
+  // Replaces the fixed label of one item of the trail shown NOW with the page's own words (the job's title, once loaded). `index` is the
+  // item's position as drawn (0 = first, 0 to 7); a label is cut to 60 characters. The path of the item stays. Last call wins; a page
+  // change drops it, so call it again from the next page. A bad index or label is refused with a console error. A host older than this
+  // feature has no such member: call it as window.__cinqoToolBridge.setBreadcrumbLabel?.(1, title).
+  setBreadcrumbLabel(index: number, label: string): void
   // Registers the display for a "custom" dashboard widget. The first
   // registration of an id wins; a malformed id or a missing mount is refused
   // with a console error. A throwing mount/update shows a "couldn't be
@@ -257,6 +262,7 @@ export interface ToolBridgeCallbacks {
   onRegisterRoute: (route: ToolRoute) => void
   // Supplied by the app, which owns the breadcrumb registry (and its first-wins rule).
   onRegisterBreadcrumbs: (registration: BreadcrumbRegistration) => void
+  onSetBreadcrumbLabel: (index: number, label: string) => void
   onRegisterDashboardWidget: (widget: ToolDashboardWidget) => void
   // Supplied by the app, which owns the React side of the comments panel; this file
   // stays free of React so a tool author can copy it on its own.
@@ -315,6 +321,9 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
         return
       }
       callbacks.onRegisterBreadcrumbs({ path, items: breadcrumbs.items })
+    },
+    setBreadcrumbLabel(index, label) {
+      callbacks.onSetBreadcrumbLabel(index, label)
     },
     registerDashboardWidget(widget) {
       if (typeof widget.id !== 'string' || !widgetIdPattern.test(widget.id)) {
