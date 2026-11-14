@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchAllCvDocuments,
   fetchCvAiRuns,
@@ -33,6 +33,7 @@ import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
 import { CV_LIST_CAP, countsText, cvListMayBeCut, cvsOfProfile, lifetimeText } from './profileViewRules'
 import { useBreadcrumbLabel } from '../../useBreadcrumbLabel'
+import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
 
@@ -44,8 +45,17 @@ function formatDate(value: string): string {
 // The page behind a profile's "View" button: everything about one profile in one read-only place, its
 // details, links and photos, its personas and the CVs that belong to them. Built from the existing
 // routes, so it needs no backend of its own. Editing stays on the Profiles page.
+//
+// The page follows the live address: when the host's router moves to ANOTHER profile on this same path (the page stays mounted, only
+// the query changes) the view is started again for the new id, so no heading, list or photo of the first profile stays on screen.
 export function ProfileViewPage() {
-  const profileId = new URLSearchParams(window.location.search).get('id') ?? ''
+  const ownPath = useRef(window.location.pathname).current
+  const address = useAddressSearch(ownPath)
+  const profileId = new URLSearchParams(address.search).get('id') ?? ''
+  return <ProfileView key={profileId} profileId={profileId} />
+}
+
+function ProfileView({ profileId }: { profileId: string }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   useBreadcrumbLabel(1, profile ? profileLabel(profile) : undefined)
   // Reads the profile again (its default photo may have changed after a photo was removed).

@@ -34,11 +34,25 @@ interface CinqoOpenFileReaderOptions {
   backLabel?: string
 }
 
+// A trail for the breadcrumb bar at the top of the content area (plan 270). Label: plain text, 1 to 60 characters. Path: a site-internal address,
+// left out for plain text; the LAST item is the current page and never a link.
+interface CinqoBreadcrumbItem {
+  label: string
+  path?: string
+}
+interface CinqoBreadcrumbs {
+  // Starts with "/tools/"; ":name" segments allowed, like a route path.
+  path: string
+  items: CinqoBreadcrumbItem[] | ((context: { params: Record<string, string>; search: string }) => CinqoBreadcrumbItem[])
+}
+
 interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
   // Shows or hides the menu page with this address (what the sidebar draws only; a host older than plan 238 does not have it).
   setMenuEntryHidden?(path: string, hidden: boolean): void
   registerRoute(route: CinqoToolRoute): void
+  // Absent in a host older than plan 270: call it only after checking it is a function.
+  registerBreadcrumbs?(breadcrumbs: CinqoBreadcrumbs): void
   navigate(path: string): void
   // Opens Cinqo's log reader as a page of its own on one or several of this tool's files (a source declared in
   // manifest.json's "file_sources"), with a way back to the page the person came from. Optional: a host older than

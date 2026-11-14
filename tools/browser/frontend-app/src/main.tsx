@@ -12,6 +12,7 @@ import { CrawlLogsPage } from './CrawlLogsPage'
 import { DebugPage } from './DebugPage'
 import { DomainsPage } from './DomainsPage'
 import { fetchChromeStatus } from './api'
+import { registerBrowserBreadcrumbs } from './breadcrumbs'
 import { browserEngineIcon, challengesIcon, crawlLogsIcon, debugGroupIcon, debugIcon, domainsIcon } from './menuIcons'
 import './index.css'
 
@@ -105,6 +106,9 @@ void chromeReady.then((installed) => {
 // reference, called later by ToolRouteOutlet) can find and tear it
 // down. mount/unmount both operate on whatever container the host
 // app hands in — no assumption about there being only ever one.
+// The trail of every page (shown at the top of the content area; an older host without the bar ignores it).
+registerBrowserBreadcrumbs(window.__cinqoToolBridge)
+
 const roots = new WeakMap<HTMLElement, Root>()
 
 function mountReact(container: HTMLElement, node: React.ReactNode) {
