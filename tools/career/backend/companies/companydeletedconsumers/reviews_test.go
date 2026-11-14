@@ -146,10 +146,12 @@ func TestTheReviewConsumerAndTheCompanyReviewTypeAreDeclaredAndRouted(t *testing
 	if n != 1 {
 		t.Errorf("manifest.json has %d career.company.deleted -> events/company-deleted-reviews listeners, want 1", n)
 	}
-	if len(m.Reviews) != 1 {
-		t.Fatalf("%d review types declared, want 1 (company)", len(m.Reviews))
-	}
 	r := m.Reviews[0]
+	for _, candidate := range m.Reviews {
+		if candidate.EntityType == "company" {
+			r = candidate
+		}
+	}
 	if r.EntityType != "company" || r.Scale != 5 || !r.HalfStars || r.ReadScope != "tool:career:companies" || r.WriteScope != "tool:career:companies" {
 		t.Errorf("the company review type: %+v", r)
 	}

@@ -15,6 +15,10 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 import { writeAddress } from '../../Shared/AddressState/writeAddress'
+import { Modal } from '../../Shared/Modal/Modal'
+import { Reviews } from '../../Shared/Reviews/Reviews'
+import { REVIEW_TYPE_RECRUITER } from '../../Shared/Reviews/reviewTypes'
+import { RecruiterRating } from './RecruiterRating'
 import { buildRecruitersSearch, isCanonicalRecruitersSearch, parseRecruitersUrl } from './recruitersUrlState'
 
 // A recruiter works for zero or more existing companies, never implicit (step 169:
@@ -36,6 +40,9 @@ export function RecruitersPage() {
   const FREELANCERS_VALUE = 'freelancers'
   const filterValue = filterFreelancers ? FREELANCERS_VALUE : filterCompanyId
   const [editingId, setEditingId] = useState<string | null>(null)
+  // The recruiter whose rating panel is open, and a counter that makes the rows' stars ask again after it closed (plan 271).
+  const [ratingFor, setRatingFor] = useState<Recruiter | null>(null)
+  const [starsVersion, setStarsVersion] = useState(0)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
@@ -277,6 +284,13 @@ export function RecruitersPage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">{name}</div>
+                        <RecruiterRating
+                          recruiterId={r.id}
+                          starsVersion={starsVersion}
+                          onRate={() => {
+                            setRatingFor(r)
+                          }}
+                        />
                         {r.email && <div className="mt-0.5 truncate text-xs text-gray-500">{r.email}</div>}
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {kind === 'freelancer' ? (
@@ -377,6 +391,17 @@ export function RecruitersPage() {
           </div>
         </aside>
       </div>
+
+      <Modal
+        open={ratingFor !== null}
+        title={ratingFor ? `Rate ${recruiterName(ratingFor)}` : 'Rate'}
+        onClose={() => {
+          setRatingFor(null)
+          setStarsVersion((v) => v + 1) // the list's stars ask again: the rating may have changed
+        }}
+      >
+        {ratingFor && <Reviews entityType={REVIEW_TYPE_RECRUITER} entityId={ratingFor.id} inRail />}
+      </Modal>
     </div>
   )
 }

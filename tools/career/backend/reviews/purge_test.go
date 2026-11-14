@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -105,6 +107,79 @@ func TestARefusalSaysWhetherAskingAgainCanHelp(t *testing.T) {
 		}
 		if refused.EntityType != "company" || refused.EntityID != company || refused.Error() == "" {
 			t.Errorf("%+v", refused)
+		}
+	}
+}
+
+func TestTheRecruiterTypeIsTheOneTheManifestDeclares(t *testing.T) {
+	if RecruiterType != "recruiter" {
+		t.Errorf("%q", RecruiterType)
+	}
+}
+
+// Every review type the manifest declares is wired end to end (plan 271): a constant here, the scopes the tool declares, a
+// "career.<type>.deleted" listener to events/<type>-deleted-reviews, and that route in main.go. A new type that misses one of them leaves
+// reviews behind when its entity is deleted, or core refuses the purge.
+func TestEveryDeclaredReviewTypeIsWiredEndToEnd(t *testing.T) {
+	raw, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		EventListeners []struct {
+			Topic      string `json:"topic"`
+			PathSuffix string `json:"path_suffix"`
+		} `json:"event_listeners"`
+		Reviews []struct {
+			EntityType string `json:"entity_type"`
+			Scale      int    `json:"scale"`
+			ReadScope  string `json:"read_scope"`
+			WriteScope string `json:"write_scope"`
+		} `json:"reviews"`
+		Scopes []struct {
+			Scope string `json:"scope"`
+		} `json:"scopes"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Reviews) != 2 {
+		t.Fatalf("%d review types declared, want 2 (company, recruiter)", len(m.Reviews))
+	}
+	purgeSrc, err := os.ReadFile("purge.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainSrc, err := os.ReadFile("../main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes := map[string]bool{}
+	for _, s := range m.Scopes {
+		scopes[s.Scope] = true
+	}
+	for _, r := range m.Reviews {
+		name := r.EntityType
+		if !strings.Contains(string(purgeSrc), `= "`+name+`"`) {
+			t.Errorf("%s: no constant in purge.go", name)
+		}
+		if !scopes[r.ReadScope] || !scopes[r.WriteScope] {
+			t.Errorf("%s: scopes %q / %q are not declared by the tool", name, r.ReadScope, r.WriteScope)
+		}
+		listeners := 0
+		for _, l := range m.EventListeners {
+			if l.Topic == "career."+name+".deleted" && l.PathSuffix == "events/"+name+"-deleted-reviews" {
+				listeners++
+			}
+		}
+		if listeners != 1 {
+			t.Errorf("%s: %d event listeners for events/%s-deleted-reviews, want 1", name, listeners, name)
+		}
+		if !strings.Contains(string(mainSrc), `"/events/`+name+`-deleted-reviews", `) {
+			t.Errorf("%s: main.go does not route /events/%s-deleted-reviews", name, name)
+		}
+		if r.Scale != 5 {
+			t.Errorf("%s: scale %d, want 5", name, r.Scale)
 		}
 	}
 }

@@ -16,7 +16,10 @@ import (
 
 // The entity types this tool declares in manifest.json's "reviews" (the frontend spells them in Shared/Reviews/reviewTypes.ts): keep them
 // in step.
-const CompanyType = "company"
+const (
+	CompanyType   = "company"
+	RecruiterType = "recruiter"
+)
 
 // purgeTimeout bounds the call: it is made while a delete's event is delivered, and core retries a slow answer.
 const purgeTimeout = 3 * time.Second

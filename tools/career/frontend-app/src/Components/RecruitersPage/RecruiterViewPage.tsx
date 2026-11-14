@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { fetchRecruiterJobs, fetchRecruiters, unmapJobRecruiter, type Recruiter, type RecruiterJob } from '../../api'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_RECRUITER } from '../../Shared/Comments/commentTypes'
+import { Reviews } from '../../Shared/Reviews/Reviews'
+import { REVIEW_TYPE_RECRUITER } from '../../Shared/Reviews/reviewTypes'
 import { UsersIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { AppLink } from '../../Shared/AppLink/AppLink'
@@ -93,47 +95,51 @@ export function RecruiterViewPage() {
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <section aria-label="Overview" className={`${cardClassName} w-full shrink-0 lg:w-72`} style={cardStyle}>
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">Overview</h2>
-          <dl className="space-y-2 text-sm">
-            <div>
-              <dt className="text-xs text-gray-500">E-mail</dt>
-              <dd>
-                {mailto !== null ? (
-                  <a href={mailto} className="break-all text-blue-700 underline hover:text-blue-800">
-                    {recruiter.email.trim()}
-                  </a>
-                ) : (
-                  <span className="text-gray-400">No e-mail stored</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-gray-500">{companiesRowLabel(recruiter)}</dt>
-              <dd>
-                {recruiter.freelancer ? (
-                  <span>{FREELANCER_LABEL}, not attached to a company</span>
-                ) : recruiter.companies.length > 0 ? (
-                  <ul className="space-y-0.5">
-                    {recruiter.companies.map((c) => (
-                      <li key={c.id}>
-                        <AppLink href={`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(c.id)}`} className="text-blue-700 hover:underline">
-                          {c.name}
-                        </AppLink>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-gray-400">No company</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-gray-500">Added</dt>
-              <dd>{formatDay(recruiter.createdAt) || '–'}</dd>
-            </div>
-          </dl>
-        </section>
+        <aside className="w-full shrink-0 lg:w-72">
+          <section aria-label="Overview" className={cardClassName} style={cardStyle}>
+            <h2 className="mb-3 text-sm font-semibold text-gray-700">Overview</h2>
+            <dl className="space-y-2 text-sm">
+              <div>
+                <dt className="text-xs text-gray-500">E-mail</dt>
+                <dd>
+                  {mailto !== null ? (
+                    <a href={mailto} className="break-all text-blue-700 underline hover:text-blue-800">
+                      {recruiter.email.trim()}
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">No e-mail stored</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">{companiesRowLabel(recruiter)}</dt>
+                <dd>
+                  {recruiter.freelancer ? (
+                    <span>{FREELANCER_LABEL}, not attached to a company</span>
+                  ) : recruiter.companies.length > 0 ? (
+                    <ul className="space-y-0.5">
+                      {recruiter.companies.map((c) => (
+                        <li key={c.id}>
+                          <AppLink href={`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(c.id)}`} className="text-blue-700 hover:underline">
+                            {c.name}
+                          </AppLink>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-gray-400">No company</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-gray-500">Added</dt>
+                <dd>{formatDay(recruiter.createdAt) || '–'}</dd>
+              </div>
+            </dl>
+          </section>
+          {/* The recruiter's star rating (plan 271), under the overview like a company's in its side column. */}
+          <Reviews entityType={REVIEW_TYPE_RECRUITER} entityId={recruiter.id} inRail />
+        </aside>
 
         <section aria-label="Mapped jobs" className="min-w-0 flex-1">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">Mapped jobs</h2>

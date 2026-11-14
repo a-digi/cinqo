@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.925",
+  "version": "0.0.926",
   "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -1560,6 +1560,10 @@
     {
       "topic": "career.recruiter.deleted",
       "path_suffix": "events/recruiter-deleted-comments"
+    },
+    {
+      "topic": "career.recruiter.deleted",
+      "path_suffix": "events/recruiter-deleted-reviews"
     }
   ],
   "widgets": [
@@ -1587,6 +1591,13 @@
   "reviews": [
     {
       "entity_type": "company",
+      "scale": 5,
+      "half_stars": true,
+      "read_scope": "tool:career:companies",
+      "write_scope": "tool:career:companies"
+    },
+    {
+      "entity_type": "recruiter",
       "scale": 5,
       "half_stars": true,
       "read_scope": "tool:career:companies",

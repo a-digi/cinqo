@@ -352,6 +352,8 @@ func runHTTPServer() {
 	http.HandleFunc("/events/company-deleted-reviews", companydeletedconsumers.CompanyReviewsDeleteHandler)
 	// Plan 168, step 7: the comments of a deleted recruiter.
 	http.HandleFunc("/events/recruiter-deleted-comments", recruiterdeletedconsumers.RecruiterCommentsDeleteHandler)
+	// Review engine: the star ratings of a deleted recruiter.
+	http.HandleFunc("/events/recruiter-deleted-reviews", recruiterdeletedconsumers.RecruiterReviewsDeleteHandler)
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
