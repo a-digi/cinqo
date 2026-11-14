@@ -2,6 +2,7 @@ import { toolNavigate } from './toolNavigator'
 import { openToolConversation } from './toolConversationOpener'
 import { isMediaId } from './mediaThumbnailRules'
 import { isValidToolRoutePath } from './matchToolRoute'
+import type { BreadcrumbRegistration } from '../breadcrumbs/breadcrumbRules'
 import { buildReaderPath, withReturnDefaults } from '../../Components/FileReader/readerPageRules'
 
 // Deliberately dependency-free (no React import, no cinqo-internal
@@ -166,6 +167,26 @@ export interface ToolReviewsOptions {
   title?: string
 }
 
+// A trail for a page of the tool (plan/ai/frontend/step-270-breadcrumb.md): the bar at the top of the content area shows it on every
+// load of a page whose address fits `path`; a page with no registration shows no bar.
+export interface ToolBreadcrumbItem {
+  // Plain text (never HTML), 1 to 60 characters; longer is cut.
+  label: string
+  // A site-internal address ("/tools/career/jobs"): it starts with one "/" (no "//host", no scheme). Leave it out for plain text. The
+  // LAST item is the page the person is on and is never a link, with or without a path.
+  path?: string
+}
+
+export interface ToolBreadcrumbs {
+  // The page's address, with the same rules as a ToolRoute path: it must start with "/tools/" and may use ":name" segments; an exact
+  // path wins over a pattern.
+  path: string
+  // 1 to 8 items (when more, the last 8 are shown), or a function of the address that returns them. The function gets params (the text
+  // of each ":name" segment) and search (the query string, "?a=b" or ""); it runs on every page load, must be synchronous and must not
+  // throw (when it throws, no bar is shown for that page). An item with a bad path is dropped.
+  items: ToolBreadcrumbItem[] | ((context: { params: Record<string, string>; search: string }) => ToolBreadcrumbItem[])
+}
+
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   // Shows or hides the menu page whose address is `path`, at any depth of an entry the tool registered (a group disappears with its last page and
@@ -175,6 +196,10 @@ export interface ToolBridge {
   // false, is refused with a console error.
   setMenuEntryHidden(path: string, hidden: boolean): void
   registerRoute(route: ToolRoute): void
+  // Registers the trail the breadcrumb bar shows for one page. The first registration of a path wins; a path outside "/tools/", a bad path
+  // or bad items are refused with a console error. A host older than this feature has no such member: call it as
+  // window.__cinqoToolBridge.registerBreadcrumbs?.({ ... }).
+  registerBreadcrumbs(breadcrumbs: ToolBreadcrumbs): void
   // Registers the display for a "custom" dashboard widget. The first
   // registration of an id wins; a malformed id or a missing mount is refused
   // with a console error. A throwing mount/update shows a "couldn't be
@@ -230,6 +255,8 @@ export interface ToolBridgeCallbacks {
   onRegisterMenuEntry: (entry: ToolMenuEntry) => void
   onSetMenuEntryHidden: (path: string, hidden: boolean) => void
   onRegisterRoute: (route: ToolRoute) => void
+  // Supplied by the app, which owns the breadcrumb registry (and its first-wins rule).
+  onRegisterBreadcrumbs: (registration: BreadcrumbRegistration) => void
   onRegisterDashboardWidget: (widget: ToolDashboardWidget) => void
   // Supplied by the app, which owns the React side of the comments panel; this file
   // stays free of React so a tool author can copy it on its own.
@@ -278,6 +305,16 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
         return
       }
       callbacks.onRegisterRoute(route)
+    },
+    registerBreadcrumbs(breadcrumbs) {
+      const path = (breadcrumbs as { path?: unknown } | null)?.path
+      if (typeof path !== 'string' || !isValidToolRoutePath(path)) {
+        console.error(
+          `Breadcrumbs for ${JSON.stringify(path)} must have a path that starts with "/tools/", has no empty segment and uses each ":name" once — ignoring registration.`,
+        )
+        return
+      }
+      callbacks.onRegisterBreadcrumbs({ path, items: breadcrumbs.items })
     },
     registerDashboardWidget(widget) {
       if (typeof widget.id !== 'string' || !widgetIdPattern.test(widget.id)) {

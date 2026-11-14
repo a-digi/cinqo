@@ -64,11 +64,26 @@ interface CinqoOpenFileReaderOptions {
   backLabel?: string
 }
 
+// A trail for the breadcrumb bar at the top of the content area (plan 270). Label: plain text, 1 to 60 characters. Path: a site-internal address
+// ("/tools/career/jobs"), left out for plain text; the LAST item is the current page and never a link.
+interface CinqoBreadcrumbItem {
+  label: string
+  path?: string
+}
+interface CinqoBreadcrumbs {
+  // Starts with "/tools/"; ":name" segments allowed, like a route path.
+  path: string
+  // 1 to 8 items, or a function of the address (params of the ":name" segments, and the query string) that returns them.
+  items: CinqoBreadcrumbItem[] | ((context: { params: Record<string, string>; search: string }) => CinqoBreadcrumbItem[])
+}
+
 interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
   // Shows or hides the menu page with this address (what the sidebar draws only; a host older than plan 238 does not have it).
   setMenuEntryHidden?(path: string, hidden: boolean): void
   registerRoute(route: CinqoToolRoute): void
+  // Absent in a host older than plan 270: call it only after checking it is a function.
+  registerBreadcrumbs?(breadcrumbs: CinqoBreadcrumbs): void
   navigate(path: string): void
   // Opens the main app's floating chat widget (if mounted) showing
   // this conversation, resuming its live turn watch automatically if

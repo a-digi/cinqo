@@ -5,6 +5,7 @@ import { mountComments } from '../../Components/Comments/mountComments'
 import { mountFileReader } from '../../Components/FileReader/mountFileReader'
 import { mountReviews, mountStars } from '../../Components/Reviews/mountReviews'
 import { applyHidden, initiallyHidden } from './hiddenEntries'
+import { useBreadcrumbRegistry } from '../breadcrumbs/BreadcrumbRegistryContext'
 import { loadTools } from './loadTools'
 import type { ToolDashboardWidget, ToolMenuEntry, ToolRoute } from './toolBridge'
 
@@ -33,6 +34,7 @@ export function useToolRegistry(): ToolRegistryValue {
 // plan/ai/tools/step-07-frontend-bridge-and-menu-integration.md.
 export function ToolRegistryProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth()
+  const { register: registerBreadcrumbs } = useBreadcrumbRegistry()
   const [registeredEntries, setRegisteredEntries] = useState<ToolMenuEntry[]>([])
   // The pages a tool shows or hides, by address: true = hidden. A page that starts hidden (hidden: true on its entry) is put here when it is
   // registered, unless the tool already decided about it; setMenuEntryHidden always wins.
@@ -62,6 +64,7 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
       onRegisterRoute: (route) => {
         setRoutes((prev) => [...prev, route])
       },
+      onRegisterBreadcrumbs: registerBreadcrumbs,
       onMountComments: mountComments,
       onMountReviews: mountReviews,
       onMountStars: mountStars,
@@ -77,7 +80,7 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
         })
       },
     })
-  }, [isAuthenticated])
+  }, [isAuthenticated, registerBreadcrumbs])
 
   // The menu without the pages a tool hides; the same array while nothing is hidden.
   const menuEntries = useMemo(

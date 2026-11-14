@@ -24,6 +24,7 @@
 import { GoalsPage } from './Components/GoalsPage/GoalsPage'
 import { fetchApplicationCountRaw } from './api'
 import { createApplicationsMenuRefresher } from './applicationsMenu'
+import { registerCareerBreadcrumbs } from './breadcrumbs'
 import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
 import { EducationPage } from './Components/EducationPage/EducationPage'
 import { LanguagesEntryPage } from './Components/LanguagesPage/LanguagesEntryPage'
@@ -138,6 +139,9 @@ import {
 } from './paths'
 
 window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
+
+// Plan 270: the trails of the breadcrumb bar (a host without the bar ignores this).
+registerCareerBreadcrumbs(window.__cinqoToolBridge)
 
 // Plan 238: the Applications item shows only when there is an application. Asked now and every time a Career page opens (mountReact below).
 const refreshApplicationsMenu = createApplicationsMenuRefresher({

@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
+import { BreadcrumbRegistryProvider } from '../../config/breadcrumbs/BreadcrumbRegistryContext'
 import { ToolRegistryProvider } from '../../config/tools/ToolRegistryContext'
 import { ConversationProvider } from '../../config/conversation/ConversationContext'
 import { PlatformsProvider } from '../../config/platforms/PlatformsContext'
@@ -28,13 +29,15 @@ import { PlatformsProvider } from '../../config/platforms/PlatformsContext'
 export function AuthenticatedProviders() {
   return (
     <AuthProvider>
-      <ToolRegistryProvider>
-        <PlatformsProvider>
-          <ConversationProvider>
-            <Outlet />
-          </ConversationProvider>
-        </PlatformsProvider>
-      </ToolRegistryProvider>
+      <BreadcrumbRegistryProvider>
+        <ToolRegistryProvider>
+          <PlatformsProvider>
+            <ConversationProvider>
+              <Outlet />
+            </ConversationProvider>
+          </PlatformsProvider>
+        </ToolRegistryProvider>
+      </BreadcrumbRegistryProvider>
     </AuthProvider>
   )
 }
