@@ -118,6 +118,7 @@ func runHTTPServer() {
 	http.HandleFunc("/fetch-frames", chromeproc.LimitSessions(crawler.FetchFramesHandler))
 	http.HandleFunc("/capture-network", chromeproc.LimitSessions(crawler.CaptureNetworkHandler))
 	http.HandleFunc("/list-links", chromeproc.LimitSessions(crawler.ListLinksHandler))
+	http.HandleFunc("/fetch-manifest", crawler.FetchManifestHandler)
 	http.HandleFunc("/page-archive", chromeproc.LimitSessions(crawler.PageArchiveHandler))
 	http.HandleFunc("/fetch-media", crawler.FetchMediaHandler)
 	http.HandleFunc("/capture-file", crawler.CaptureFileHandler)
