@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.261",
+  "version": "0.0.262",
   "description": "Opens and reads web pages for the other tools with Chrome; shows a window when a site asks you to prove you are human.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -224,7 +224,8 @@
     {
       "method": "POST",
       "path_suffix": "crawl-cancel",
-      "required_scope": "tool:browser:crawl"
+      "required_scope": "tool:browser:crawl",
+      "allow_background": true
     },
     {
       "method": "GET",
@@ -234,17 +235,20 @@
     {
       "method": "POST",
       "path_suffix": "fetch-frames",
-      "required_scope": "tool:browser:crawl"
+      "required_scope": "tool:browser:crawl",
+      "allow_background": true
     },
     {
       "method": "POST",
       "path_suffix": "capture-network",
-      "required_scope": "tool:browser:crawl"
+      "required_scope": "tool:browser:crawl",
+      "allow_background": true
     },
     {
       "method": "POST",
       "path_suffix": "list-links",
-      "required_scope": "tool:browser:crawl"
+      "required_scope": "tool:browser:crawl",
+      "allow_background": true
     },
     {
       "method": "POST",

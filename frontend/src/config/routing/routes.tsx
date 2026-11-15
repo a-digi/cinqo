@@ -5,6 +5,7 @@ import { AuthenticatedProviders } from '../../Components/Auth/AuthenticatedProvi
 import { LoginPage } from '../../Components/Auth/LoginPage'
 import { Layout } from '../../Layout/Layout'
 import { ScopesPage } from '../../Components/Admin/Security/ScopesPage'
+import { OrganisationsPage } from '../../Components/Admin/Organisations/OrganisationsPage'
 import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
 import { RepositoriesPage } from '../../Components/Admin/Tools/RepositoriesPage'
 import { RepositoryPage } from '../../Components/Admin/Tools/RepositoryPage'
@@ -52,6 +53,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.SystemRead]}>
                 <UnexpectedStopPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/organisations',
+            element: (
+              <AuthGuard scopes={[AppScopes.OrganisationsAdmin]}>
+                <OrganisationsPage />
               </AuthGuard>
             ),
           },

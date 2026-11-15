@@ -20,4 +20,5 @@ export const AppScopes = {
   ConversationUse: 'cinqo:conversation:use',
   SystemRead: 'cinqo:system:read',
   SystemManage: 'cinqo:system:manage',
+  OrganisationsAdmin: 'cinqo:organisations:admin',
 } as const

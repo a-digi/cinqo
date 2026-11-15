@@ -34,3 +34,6 @@ export const howToIcons: Record<HowToPageId, string> = {
 
 // Unexpected stops: a warning triangle.
 export const unexpectedStopsIcon = `${OPEN}<path d="M10 3.5l7 12.5H3L10 3.5z" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 8.5v3.2M10 13.9v.1" stroke-width="1.5" stroke-linecap="round"/></svg>`
+
+// Organisations: a small building (a group of users that belong together).
+export const organisationsIcon = `${OPEN}<path d="M4.5 16.5V5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v11.5M11.5 8.5h3a1 1 0 0 1 1 1v7" stroke-width="1.3" stroke-linejoin="round"/><path d="M3 16.5h14M7 7.5h2M7 10.5h2M7 13.5h2M13 11.5h.5M13 14h.5" stroke-width="1.3" stroke-linecap="round"/></svg>`

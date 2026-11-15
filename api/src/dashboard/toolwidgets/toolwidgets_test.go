@@ -18,6 +18,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/a-digi/cinqo/src/dashboard"
+	"github.com/a-digi/cinqo/src/organisation/repository/persistent"
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 	tool_persistent "github.com/a-digi/cinqo/src/tool/repository/persistent"
 )
@@ -103,6 +104,7 @@ type fakeTool struct {
 	mu   sync.Mutex
 	auth string
 	path string
+	org  string
 	hits int
 }
 
@@ -110,7 +112,7 @@ func newFakeTool(t *testing.T, handler func(w http.ResponseWriter, r *http.Reque
 	ft := &fakeTool{}
 	ft.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ft.mu.Lock()
-		ft.auth, ft.path = r.Header.Get("Authorization"), r.URL.Path
+		ft.auth, ft.path, ft.org = r.Header.Get("Authorization"), r.URL.Path, r.Header.Get("X-Cinqo-Org")
 		ft.hits++
 		ft.mu.Unlock()
 		handler(w, r)
@@ -292,5 +294,46 @@ func TestToolDeleteRemovesItsWidgets(t *testing.T) {
 	}
 	if got := existing(t, db, "t1"); len(got) != 0 {
 		t.Errorf("rows left after delete: %+v", got)
+	}
+}
+
+func TestTheToolIsToldTheCallersOrganisationAndASuspendedOneGetsNoData(t *testing.T) {
+	e, ft, db := setup(t, okHandler)
+	fresh := func() *dashboard.Engine { return dashboard.NewEngine(NewSource(db, ft.portFunc(true))) } // the engine caches a widget's data for a short time
+	if d, ok := e.Data(context.Background(), reader, "demo.jobs"); !ok || d.State != dashboard.StateOK || ft.org != "default" {
+		t.Fatalf("a new user is in the default organisation: %+v org=%q", d, ft.org)
+	}
+	p := persistent.NewOrganisationPersistentRepo(db)
+	acme, _ := p.Create("Acme")
+	_ = p.Assign("u1", acme.ID)
+	if _, ok := fresh().Data(context.Background(), reader, "demo.jobs"); !ok || ft.org != acme.ID {
+		t.Errorf("the user's own organisation: %q", ft.org)
+	}
+	hits := ft.hits
+	_ = p.Update(acme.ID, "Acme", "suspended")
+	d, ok := fresh().Data(context.Background(), reader, "demo.jobs")
+	if ok && d.State == dashboard.StateOK || ft.hits != hits {
+		t.Errorf("a suspended organisation gets no data and the tool is not asked: %+v hits %d -> %d", d, hits, ft.hits)
+	}
+}
+
+func TestACallerWithoutAUserIDSendsNoOrganisation(t *testing.T) {
+	e, ft, _ := setup(t, okHandler)
+	nobody := dashboard.Caller{Scopes: []string{"tool:demo:read"}, Token: "tok"}
+	_, _ = e.Data(context.Background(), nobody, "demo.jobs")
+	if ft.hits != 1 || ft.org != "" {
+		t.Errorf("hits %d org %q", ft.hits, ft.org)
+	}
+}
+
+func TestAnOrganisationThatCannotBeReadSendsNothingToTheTool(t *testing.T) {
+	_, ft, db := setup(t, okHandler)
+	providers := NewSource(db, ft.portFunc(true)).Providers()
+	if len(providers) != 1 {
+		t.Fatalf("%d providers", len(providers))
+	}
+	_ = db.Close()
+	if _, err := providers[0].Data(context.Background(), reader); err == nil || ft.hits != 0 {
+		t.Errorf("fail closed: err=%v, the tool was asked %d times", err, ft.hits)
 	}
 }

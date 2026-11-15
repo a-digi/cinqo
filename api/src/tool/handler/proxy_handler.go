@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
@@ -31,9 +32,22 @@ type diStore interface {
 // enabled/running, the declared route, and the caller's own scope on
 // every single request — nothing here is cached. See
 // plan/ai/tools/step-05-reverse-proxy-and-request-enforcement.md.
-func ProxyHandler(reqCtx request.RequestContext) {
+func ProxyHandler(reqCtx request.RequestContext) { serveProxy(reqCtx, false) }
+
+// BackgroundProxyHandler handles ANY /api/v1/tools/{slug}/background-proxy/** — the way one tool calls a route of another WITHOUT a signed-in person, with its own
+// service token (plan/ai/tools/namako/saas/s7-unattended-monitoring.md). It is a separate route on purpose: the router's security layer demands a person's bearer
+// token on the ordinary proxy route, and a person's route must never be able to take a service token. This one is declared public in route-tool.yaml because the
+// whole check is done here (background_call.go), on every call.
+func BackgroundProxyHandler(reqCtx request.RequestContext) { serveProxy(reqCtx, true) }
+
+// serveProxy is the one place a request is forwarded to a tool. A person's call (service false) needs a valid token and the scope the route declares; an
+// unattended call (service true) needs the calling tool's service token and passes the much narrower checks of serviceCall. The two never mix.
+func serveProxy(reqCtx request.RequestContext, service bool) {
 	w := reqCtx.GetWriter()
 	r := reqCtx.GetRequest()
+
+	// Headers only core may set are thrown away first, whoever sent them (what the caller put in the acting-organisation header is kept for an unattended call).
+	acting := scrubInternalHeaders(r)
 
 	slug := reqCtx.GetURI().GetPathVariable("slug")
 	if slug == "" {
@@ -92,20 +106,47 @@ func ProxyHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	// A route may opt out of this check entirely (route.AllowCapabilityToken)
-	// when its caller is a stateless tool subprocess that can never present
-	// a session token — e.g. pdf_tools fetching a career cv-import/file
-	// URL. Security for such a route is delegated wholesale to the
-	// downstream tool's own handler (a random capability token in the
-	// query string); this proxy forwards the request unauthenticated.
-	if !route.AllowCapabilityToken {
-		scopes, err := callerScopes(reqCtx)
-		if err != nil {
-			response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+	if service {
+		// Another tool calling with its own service token while nobody is signed in: its own, much narrower, checks (background_call.go).
+		res := serviceCall(db, r, acting, tool, route, remainder)
+		if res.code != 0 {
+			if res.retryAfter > 0 {
+				w.Header().Set("Retry-After", strconv.Itoa(int(res.retryAfter/time.Second)+1))
+			}
+			response.ErrorResponse(w, res.code, res.message)
 			return
 		}
-		if !hasScope(scopes, "cinqo:super:admin") && !hasScope(scopes, route.RequiredScope) {
-			response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
+		defer res.release()
+	} else {
+		if isServiceCall(r) {
+			// A person's route never takes a tool's service token (it is the unattended route's business, and it is checked there).
+			response.ErrorResponse(w, http.StatusUnauthorized, "a service token is not accepted on this route")
+			return
+		}
+		// A route may opt out of this check entirely (route.AllowCapabilityToken)
+		// when its caller is a stateless tool subprocess that can never present
+		// a session token — e.g. pdf_tools fetching a career cv-import/file
+		// URL. Security for such a route is delegated wholesale to the
+		// downstream tool's own handler (a random capability token in the
+		// query string); this proxy forwards the request unauthenticated.
+		sub := ""
+		if !route.AllowCapabilityToken {
+			var scopes []string
+			var err error
+			sub, scopes, err = callerIdentity(reqCtx)
+			if err != nil {
+				response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			if !hasScope(scopes, "cinqo:super:admin") && !hasScope(scopes, route.RequiredScope) {
+				response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
+				return
+			}
+		}
+
+		// The organisation the tool acts for: set here from the caller's own membership, never taken from the request (SaaS plan, S1 step 3).
+		if code, message := organisationGate(db, r, sub); code != 0 {
+			response.ErrorResponse(w, code, message)
 			return
 		}
 	}
@@ -145,40 +186,40 @@ func slugFromToolsProxyPath(path string) string {
 	return ""
 }
 
-// callerScopes validates the request's own token (cookie or Bearer
+// callerIdentity validates the request's own token (cookie or Bearer
 // header — CookieSecurityLayer already promoted a cookie into the
 // header before this handler ever runs, but re-reading directly here
 // matches auth_handler.MeHandler's own established approach rather
 // than assuming that promotion always already happened) and returns
-// its scopes. This is the one place in cinqo a handler re-validates a
+// its user id and scopes. This is the one place in cinqo a handler re-validates a
 // scope dynamically instead of relying on a static route-YAML
 // declaration — see the design doc's "Security considerations" for why
 // this route structurally can't declare one.
-func callerScopes(reqCtx request.RequestContext) ([]string, error) {
+func callerIdentity(reqCtx request.RequestContext) (string, []string, error) {
 	r := reqCtx.GetRequest()
 	token := tokenFromRequest(r)
 	if token == "" {
-		return nil, errNoToken
+		return "", nil, errNoToken
 	}
 
 	storeCtx, ok := reqCtx.GetDI().(diStore)
 	if !ok {
-		return nil, errNoToken
+		return "", nil, errNoToken
 	}
 	raw, ok := storeCtx.Get("jwks_service")
 	if !ok {
-		return nil, errNoToken
+		return "", nil, errNoToken
 	}
 	jwksSvc, ok := raw.(*auth_service.JwksService)
 	if !ok {
-		return nil, errNoToken
+		return "", nil, errNoToken
 	}
 
-	_, scopes, _, err := jwksSvc.Validate(token)
+	sub, scopes, _, err := jwksSvc.Validate(token)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return scopes, nil
+	return sub, scopes, nil
 }
 
 func tokenFromRequest(r *http.Request) string {

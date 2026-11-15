@@ -33,6 +33,7 @@ import { useUpdateCheck } from './useUpdateCheck'
 import { headGradient, themeForTool } from './toolCardTheme'
 import { Byline, LicensePill, LinkRow } from './ToolAttribution'
 import { DependenciesBlock } from './ToolDependencies'
+import { BackgroundBlock } from './ToolBackground'
 import { linkEntries, matchesQuery, searchText } from './toolMetaDisplay'
 
 // Admin-only view of installed tools (api/src/tool) — see
@@ -69,6 +70,13 @@ export function ToolsListPage() {
       cancelled = true
     }
   }, [])
+
+  // After an approval is given or taken back: the cards' summaries ("2 of 3 approved") are read again, without reloading the whole page.
+  const refreshTools = () => {
+    fetchTools()
+      .then(setTools)
+      .catch(() => undefined)
+  }
 
   const handleToggle = async (tool: Tool) => {
     setBusySlug(tool.slug)
@@ -292,6 +300,13 @@ export function ToolsListPage() {
 
                   <div className="mt-4 space-y-2.5">
                     <DependenciesBlock name={tool.name} requirements={tool.requiredTools} installed={tools} accent={theme.accent} />
+                    <BackgroundBlock
+                      slug={tool.slug}
+                      name={tool.name}
+                      summary={tool.background}
+                      accent={theme.accent}
+                      onChanged={refreshTools}
+                    />
                     <div className="rounded-xl bg-gray-50 px-3 py-2.5">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">About</p>
                       {description === '' ? (

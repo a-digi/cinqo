@@ -121,11 +121,11 @@ func (r *ToolQueryRepo) ExistingScopesExcludingTool(excludeToolID string) (map[s
 // plan/ai/tools/step-05-reverse-proxy-and-request-enforcement.md.
 func (r *ToolQueryRepo) FindRoute(toolID, method, pathSuffix string) (*tool_entity.ToolRoute, error) {
 	row := r.db.QueryRow(
-		`SELECT tool_id, method, path_suffix, required_scope, allow_capability_token FROM tool_routes WHERE tool_id = ? AND method = ? AND path_suffix = ? LIMIT 1`,
+		`SELECT tool_id, method, path_suffix, required_scope, allow_capability_token, allow_background FROM tool_routes WHERE tool_id = ? AND method = ? AND path_suffix = ? LIMIT 1`,
 		toolID, method, pathSuffix,
 	)
 	var rt tool_entity.ToolRoute
-	if err := row.Scan(&rt.ToolID, &rt.Method, &rt.PathSuffix, &rt.RequiredScope, &rt.AllowCapabilityToken); err != nil {
+	if err := row.Scan(&rt.ToolID, &rt.Method, &rt.PathSuffix, &rt.RequiredScope, &rt.AllowCapabilityToken, &rt.AllowBackground); err != nil {
 		return nil, err
 	}
 	return &rt, nil
@@ -202,6 +202,28 @@ func (r *ToolQueryRepo) EnabledRouteScopes() ([]string, error) {
 			return nil, err
 		}
 		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// BackgroundRoutesBySlug returns, per tool slug, the routes ("METHOD path_suffix") that tool marked allow_background: what another tool may ask to use
+// without a signed-in person.
+func (r *ToolQueryRepo) BackgroundRoutesBySlug() (map[string]map[string]struct{}, error) {
+	rows, err := r.db.Query(`SELECT t.slug, rt.method, rt.path_suffix FROM tool_routes rt JOIN tools t ON t.id = rt.tool_id WHERE rt.allow_background = 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]struct{}{}
+	for rows.Next() {
+		var slug, method, path string
+		if err := rows.Scan(&slug, &method, &path); err != nil {
+			return nil, err
+		}
+		if out[slug] == nil {
+			out[slug] = map[string]struct{}{}
+		}
+		out[slug][method+" "+path] = struct{}{}
 	}
 	return out, rows.Err()
 }

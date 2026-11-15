@@ -33,6 +33,9 @@ export interface Tool {
   metadata: ToolMetadata | null
   // The tools this one needs, in the order it declared them.
   requiredTools: RequiredTool[]
+  // What the tool asks to use without a signed-in person and how many of those routes an administrator approved; null for a tool that asks for nothing
+  // (and for the answers of install, enable and disable, which leave it out: the list has it).
+  background: { requested: number; approved: number } | null
 }
 
 interface ToolRaw {
@@ -52,6 +55,8 @@ interface ToolRaw {
   metadata?: ToolMetadata | null
   // Absent from a core that predates it: read as "needs nothing".
   required_tools?: { slug: string; min_version?: string; max_version?: string }[] | null
+  // Absent for a tool that asks for no unattended use, and from a core that predates it.
+  background?: { requested: number; approved: number } | null
 }
 
 function fromRaw(raw: ToolRaw): Tool {
@@ -75,6 +80,7 @@ function fromRaw(raw: ToolRaw): Tool {
       minVersion: r.min_version ?? '',
       maxVersion: r.max_version ?? '',
     })),
+    background: raw.background ?? null,
   }
 }
 
@@ -135,4 +141,63 @@ export async function deleteTool(slug: string, force = false): Promise<void> {
   } catch (err) {
     throw asDependentsError(err)
   }
+}
+
+// One route of another tool that a tool asks to use without a signed-in person (plan/ai/tools/namako/saas/s7-unattended-monitoring.md).
+export interface BackgroundRoute {
+  targetSlug: string
+  method: string
+  pathSuffix: string
+}
+
+export interface BackgroundItem extends BackgroundRoute {
+  targetName: string
+  // The target tool is installed and still marks the route as one that may be called in the background: an approval needs it.
+  allowedNow: boolean
+  approved: boolean
+  approvedBy: string
+  approvedAt: string
+}
+
+interface BackgroundItemRaw {
+  target_slug: string
+  target_name: string
+  method: string
+  path_suffix: string
+  allowed_now: boolean
+  approved: boolean
+  approved_by: string
+  approved_at: string
+}
+
+const backgroundFromRaw = (r: BackgroundItemRaw): BackgroundItem => ({
+  targetSlug: r.target_slug,
+  targetName: r.target_name,
+  method: r.method,
+  pathSuffix: r.path_suffix,
+  allowedNow: r.allowed_now,
+  approved: r.approved,
+  approvedBy: r.approved_by,
+  approvedAt: r.approved_at,
+})
+
+const backgroundPath = (slug: string) => `/api/v1/tools/${encodeURIComponent(slug)}/background`
+const routesBody = (routes: readonly BackgroundRoute[]) => ({
+  routes: routes.map((r) => ({ target_slug: r.targetSlug, method: r.method, path_suffix: r.pathSuffix })),
+})
+
+export async function fetchToolBackground(slug: string): Promise<BackgroundItem[]> {
+  const raw = await apiGet<{ message: { items: BackgroundItemRaw[] } }>(backgroundPath(slug))
+  return raw.message.items.map(backgroundFromRaw)
+}
+
+// Both answer the whole list again, so the dialog shows what is stored, not what it hoped for.
+export async function approveToolBackground(slug: string, routes: readonly BackgroundRoute[]): Promise<BackgroundItem[]> {
+  const raw = await apiPost<{ message: { items: BackgroundItemRaw[] } }>(`${backgroundPath(slug)}/approve`, routesBody(routes))
+  return raw.message.items.map(backgroundFromRaw)
+}
+
+export async function revokeToolBackground(slug: string, routes: readonly BackgroundRoute[]): Promise<BackgroundItem[]> {
+  const raw = await apiPost<{ message: { items: BackgroundItemRaw[] } }>(`${backgroundPath(slug)}/revoke`, routesBody(routes))
+  return raw.message.items.map(backgroundFromRaw)
 }

@@ -23,4 +23,8 @@ type ToolRoute struct {
 	// RequiredScope above is then unused for that route, since
 	// ProxyHandler never evaluates it when this is true.
 	AllowCapabilityToken bool `db:"allow_capability_token" dbtype:"INTEGER" nullable:"false" json:"allow_capability_token"`
+	// AllowBackground says the route may be called by another tool WITHOUT a signed-in person (a service call, see plan/ai/tools/namako/saas/
+	// s7-unattended-monitoring.md). Only the route's own tool can set it, and only read-only routes that need no human should: another tool can
+	// never reach a route that does not carry it, however it is declared on its side.
+	AllowBackground bool `db:"allow_background" dbtype:"INTEGER" nullable:"false" json:"allow_background"`
 }

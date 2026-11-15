@@ -329,3 +329,61 @@ func TestProvidersAreAskedAfreshEachRequest(t *testing.T) {
 		t.Error("a provider added after the engine was built must appear")
 	}
 }
+
+// Live check 2026-11-15: a user moved to another organisation was shown the cached numbers of the one they left.
+func TestCacheIsPerOrganisationToo(t *testing.T) {
+	p := provider("jobs", "", okStat)
+	e := engineOf(t, p)
+	inA := Caller{UserID: "alice", OrgID: "org-a"}
+	inB := Caller{UserID: "alice", OrgID: "org-b"}
+	e.Data(context.Background(), inA, "test.jobs")
+	e.Data(context.Background(), inA, "test.jobs")
+	if p.calls.Load() != 1 {
+		t.Errorf("same user and organisation: %d calls, want 1", p.calls.Load())
+	}
+	e.Data(context.Background(), inB, "test.jobs")
+	if p.calls.Load() != 2 {
+		t.Errorf("the same user in another organisation must not get the first one's cached data: %d calls, want 2", p.calls.Load())
+	}
+	e.Data(context.Background(), inA, "test.jobs") // back again: A's entry is still valid
+	if p.calls.Load() != 2 {
+		t.Errorf("%d calls, want 2", p.calls.Load())
+	}
+	e.Data(context.Background(), Caller{UserID: "alice"}, "test.jobs") // organisation unknown: an entry of its own
+	if p.calls.Load() != 3 {
+		t.Errorf("an unknown organisation shares no entry: %d calls, want 3", p.calls.Load())
+	}
+}
+
+func TestConcurrentCallsOfTwoOrganisationsAreNotJoined(t *testing.T) {
+	gate := make(chan struct{})
+	seen := make(chan string, 4)
+	p := provider("jobs", "", func(ctx context.Context, c Caller) ([]byte, error) {
+		seen <- c.OrgID
+		<-gate
+		return okStat(ctx, c)
+	})
+	e := engineOf(t, p)
+	var wg sync.WaitGroup
+	for _, org := range []string{"org-a", "org-b"} {
+		wg.Add(1)
+		go func(org string) {
+			defer wg.Done()
+			e.Data(context.Background(), Caller{UserID: "alice", OrgID: org}, "test.jobs")
+		}(org)
+	}
+	got := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		select {
+		case o := <-seen:
+			got[o] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("the second organisation's call was joined to the first one's instead of running")
+		}
+	}
+	close(gate)
+	wg.Wait()
+	if !got["org-a"] || !got["org-b"] {
+		t.Errorf("%v", got)
+	}
+}

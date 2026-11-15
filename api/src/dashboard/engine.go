@@ -112,7 +112,7 @@ func (e *Engine) Data(ctx context.Context, caller Caller, id string) (data Data,
 		return Data{}, false
 	}
 	def := p.Definition()
-	key := id + "\x00" + caller.UserID
+	key := id + "\x00" + caller.UserID + "\x00" + caller.OrgID
 
 	e.mu.Lock()
 	if c, hit := e.cache[key]; hit && e.now().Before(c.expires) {

@@ -41,6 +41,9 @@ type toolResponse struct {
 	// RequiredTools are the other tools this one declared it cannot work without (plan 217); never null. The page resolves each against the
 	// installed tools it already has.
 	RequiredTools []requiredToolResponse `json:"required_tools"`
+	// Background is how many routes of other tools this tool asks to use without a signed-in person and how many of them an administrator approved. Only
+	// the tool list fills it, and only for a tool that asks; the single-tool answers (install, enable...) leave it out.
+	Background *tool_query.BackgroundSummary `json:"background,omitempty"`
 }
 
 type requiredToolResponse struct {
@@ -110,9 +113,18 @@ func toToolResponses(db *sql.DB, tools []*tool_entity.Tool, cfg systemtools.Conf
 		requiredByToolID[rt.ToolID] = append(requiredByToolID[rt.ToolID], rt)
 	}
 
+	background, err := tool_query.NewToolBackgroundQueryRepo(db).Summaries()
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]toolResponse, 0, len(tools))
 	for _, t := range tools {
-		out = append(out, toToolResponse(t, cfg, namesByToolID[t.ID], requiredByToolID[t.ID]))
+		r := toToolResponse(t, cfg, namesByToolID[t.ID], requiredByToolID[t.ID])
+		if sum, ok := background[t.ID]; ok {
+			r.Background = &sum
+		}
+		out = append(out, r)
 	}
 	return out, nil
 }

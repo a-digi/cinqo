@@ -92,6 +92,22 @@ type Manifest struct {
 	// people holding the declared scope. Needs no backend route: core reads the files. See FileSourceDecl and
 	// plan/ai/file-reader/file-reader-engine.md.
 	FileSources []FileSourceDecl `json:"file_sources,omitempty"`
+	// BackgroundAccess declares which routes of OTHER tools this tool wants to use without a signed-in person (monitoring that runs while nobody has a
+	// page open). It grants nothing by itself: the target tool must have marked those routes allow_background, the tool must require the target, and an
+	// administrator must approve each route after the install. See BackgroundAccessDecl and plan/ai/tools/namako/saas/s7-unattended-monitoring.md.
+	BackgroundAccess []BackgroundAccessDecl `json:"background_access,omitempty"`
+}
+
+// BackgroundAccessDecl is the routes of one other tool this tool asks to use unattended.
+type BackgroundAccessDecl struct {
+	Tool   string                `json:"tool"`
+	Routes []BackgroundRouteDecl `json:"routes"`
+}
+
+// BackgroundRouteDecl names one route of the target tool, exactly as the target declares it.
+type BackgroundRouteDecl struct {
+	Method     string `json:"method"`
+	PathSuffix string `json:"path_suffix"`
 }
 
 type ScopeDecl struct {
@@ -108,6 +124,9 @@ type RouteDecl struct {
 	// time. Defaults to false (the normal, scope-gated proxy path) when
 	// omitted, so it's opt-in per route.
 	AllowCapabilityToken bool `json:"allow_capability_token,omitempty"`
+	// AllowBackground marks this route as one other tools may ask to use without a signed-in person (see Manifest.BackgroundAccess). Opt-in per route:
+	// mark only read-only routes that need no human (never a login window, never a download that a person must allow).
+	AllowBackground bool `json:"allow_background,omitempty"`
 }
 
 type MCPToolDecl struct {
@@ -227,6 +246,8 @@ type RequiredToolDecl struct {
 type InstalledToolInfo struct {
 	Version string
 	Enabled bool
+	// BackgroundRoutes are the routes ("METHOD path_suffix") this tool marked allow_background.
+	BackgroundRoutes map[string]struct{}
 }
 
 var (
@@ -314,6 +335,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		return "", err
 	}
 	if err := ValidateRequiredTools(m, in.InstalledTools); err != nil {
+		return "", err
+	}
+	if err := ValidateBackground(m, in.InstalledTools, in.HasBackendExecutable); err != nil {
 		return "", err
 	}
 
@@ -683,4 +707,74 @@ func splitVersion(v string) ([]int, error) {
 		out[i] = n
 	}
 	return out, nil
+}
+
+// Limits of a background_access declaration.
+const (
+	MaxBackgroundRoutesPerTool = 50
+	maxBackgroundPathLength    = 200
+)
+
+var backgroundMethods = map[string]struct{}{"GET": {}, "POST": {}, "PUT": {}, "PATCH": {}, "DELETE": {}}
+
+// ValidateBackground checks the unattended-use declarations of a manifest: its own routes marked allow_background (never together with allow_capability_token,
+// the two ways around a signed-in person must not be mixed on one route), and background_access: only toward a tool this one requires, never itself, every
+// route readable, no duplicates, a backend to make the calls with, and every route one the target marked allow_background and has installed and enabled.
+func ValidateBackground(m Manifest, installed map[string]InstalledToolInfo, hasBackend bool) error {
+	for _, rt := range m.Routes {
+		if rt.AllowBackground && rt.AllowCapabilityToken {
+			return fmt.Errorf("route %s %s: allow_background and allow_capability_token cannot be combined", rt.Method, rt.PathSuffix)
+		}
+	}
+	if len(m.BackgroundAccess) == 0 {
+		return nil
+	}
+	if !hasBackend {
+		return fmt.Errorf("background_access requires the package to include a backend executable")
+	}
+	required := map[string]struct{}{}
+	for _, dep := range m.RequiresTools {
+		required[dep.Slug] = struct{}{}
+	}
+	seenTool := map[string]struct{}{}
+	for _, decl := range m.BackgroundAccess {
+		switch {
+		case !slugPattern.MatchString(decl.Tool):
+			return fmt.Errorf("background_access: tool %q must match %s", decl.Tool, slugPattern.String())
+		case decl.Tool == m.Slug:
+			return fmt.Errorf("background_access: a tool cannot ask for its own routes (%q)", decl.Tool)
+		}
+		if _, ok := required[decl.Tool]; !ok {
+			return fmt.Errorf("background_access: %q must also be listed in requires_tools", decl.Tool)
+		}
+		if _, dup := seenTool[decl.Tool]; dup {
+			return fmt.Errorf("background_access: %q is declared twice", decl.Tool)
+		}
+		seenTool[decl.Tool] = struct{}{}
+		if len(decl.Routes) == 0 {
+			return fmt.Errorf("background_access: %q needs at least one route", decl.Tool)
+		}
+		if len(decl.Routes) > MaxBackgroundRoutesPerTool {
+			return fmt.Errorf("background_access: %q asks for %d routes, at most %d", decl.Tool, len(decl.Routes), MaxBackgroundRoutesPerTool)
+		}
+		seenRoute := map[string]struct{}{}
+		for _, rt := range decl.Routes {
+			if _, ok := backgroundMethods[rt.Method]; !ok {
+				return fmt.Errorf("background_access: %q route method %q must be GET, POST, PUT, PATCH or DELETE", decl.Tool, rt.Method)
+			}
+			p := rt.PathSuffix
+			if p == "" || len(p) > maxBackgroundPathLength || strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.ContainsAny(p, "?#\\ ") {
+				return fmt.Errorf("background_access: %q has an unusable path_suffix %q", decl.Tool, p)
+			}
+			key := rt.Method + " " + p
+			if _, dup := seenRoute[key]; dup {
+				return fmt.Errorf("background_access: %q asks for %s twice", decl.Tool, key)
+			}
+			seenRoute[key] = struct{}{}
+			if _, ok := installed[decl.Tool].BackgroundRoutes[key]; !ok {
+				return fmt.Errorf("background_access: tool %q does not allow background use of %s", decl.Tool, key)
+			}
+		}
+	}
+	return nil
 }

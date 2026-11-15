@@ -24,6 +24,8 @@ import (
 	livelog_handler "github.com/a-digi/cinqo/src/livelog/handler"
 	"github.com/a-digi/cinqo/src/localai"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
+	"github.com/a-digi/cinqo/src/organisation"
+	organisation_handler "github.com/a-digi/cinqo/src/organisation/handler"
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/platform"
 	platform_handler "github.com/a-digi/cinqo/src/platform/handler"
@@ -73,6 +75,7 @@ func Init(ctx serverdi.Context) {
 	scopes.Register(platform.ScopeGroup)
 	scopes.Register(conversation.ScopeGroup)
 	scopes.Register(system.ScopeGroup)
+	scopes.Register(organisation.ScopeGroup)
 
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
@@ -97,13 +100,26 @@ func Init(ctx serverdi.Context) {
 
 		"SecurityScopesList": &security_handler.ScopesListHandler{},
 
-		"ToolList":           local_routing.HandlerFunc(tool_handler.ListHandler),
-		"ToolInstall":        local_routing.HandlerFunc(tool_handler.InstallHandler),
-		"ToolDelete":         local_routing.HandlerFunc(tool_handler.DeleteHandler),
-		"ToolEnable":         local_routing.HandlerFunc(tool_handler.EnableHandler),
-		"ToolDisable":        local_routing.HandlerFunc(tool_handler.DisableHandler),
-		"ToolFrontendBundle": local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
-		"ToolProxy":          local_routing.HandlerFunc(tool_handler.ProxyHandler),
+		"OrganisationList":          local_routing.HandlerFunc(organisation_handler.ListHandler),
+		"OrganisationCreate":        local_routing.HandlerFunc(organisation_handler.CreateHandler),
+		"OrganisationUpdate":        local_routing.HandlerFunc(organisation_handler.UpdateHandler),
+		"OrganisationMembers":       local_routing.HandlerFunc(organisation_handler.MembersHandler),
+		"OrganisationAssign":        local_routing.HandlerFunc(organisation_handler.AssignHandler),
+		"OrganisationBackgroundSet": local_routing.HandlerFunc(organisation_handler.SetBackgroundHandler),
+		"BackgroundOverview":        local_routing.HandlerFunc(organisation_handler.BackgroundOverviewHandler),
+		"BackgroundOrganisations":   local_routing.HandlerFunc(organisation_handler.BackgroundOrganisationsHandler),
+
+		"ToolList":              local_routing.HandlerFunc(tool_handler.ListHandler),
+		"ToolInstall":           local_routing.HandlerFunc(tool_handler.InstallHandler),
+		"ToolDelete":            local_routing.HandlerFunc(tool_handler.DeleteHandler),
+		"ToolEnable":            local_routing.HandlerFunc(tool_handler.EnableHandler),
+		"ToolBackgroundList":    local_routing.HandlerFunc(tool_handler.BackgroundListHandler),
+		"ToolBackgroundApprove": local_routing.HandlerFunc(tool_handler.BackgroundApproveHandler),
+		"ToolBackgroundRevoke":  local_routing.HandlerFunc(tool_handler.BackgroundRevokeHandler),
+		"ToolDisable":           local_routing.HandlerFunc(tool_handler.DisableHandler),
+		"ToolFrontendBundle":    local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
+		"ToolProxy":             local_routing.HandlerFunc(tool_handler.ProxyHandler),
+		"ToolBackgroundProxy":   local_routing.HandlerFunc(tool_handler.BackgroundProxyHandler),
 
 		"ToolUpdatesGet":   local_routing.HandlerFunc(toolrepository_handler.UpdatesHandler),
 		"ToolUpdatesCheck": local_routing.HandlerFunc(toolrepository_handler.CheckUpdatesHandler),

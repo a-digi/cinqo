@@ -1,0 +1,64 @@
+routes:
+  - path: /api/v1/organisations
+    method: GET
+    executor: OrganisationList
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  - path: /api/v1/organisations
+    method: POST
+    executor: OrganisationCreate
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  - path: /api/v1/organisations/{id}
+    method: PUT
+    executor: OrganisationUpdate
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  - path: /api/v1/organisations/{id}/members
+    method: GET
+    executor: OrganisationMembers
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  - path: /api/v1/users/{sub}/organisation
+    method: PUT
+    executor: OrganisationAssign
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  # Unattended use of tools (plan/ai/tools/namako/saas/s7-unattended-monitoring.md): the switch per organisation, and what the tools hold and used.
+  - path: /api/v1/organisations/{id}/background
+    method: PUT
+    executor: OrganisationBackgroundSet
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  - path: /api/v1/background/overview
+    method: GET
+    executor: BackgroundOverview
+    security: authenticated
+    scopes:
+      - cinqo:organisations:admin
+      - cinqo:super:admin
+
+  # A tool asking which organisations it should work for without a signed-in person (plan/ai/tools/namako/saas/s7-unattended-monitoring.md, step 6). Public because the
+  # caller is a tool: the handler checks its service token and answers an empty list to a tool that holds no approval.
+  - path: /api/v1/background/organisations
+    method: GET
+    executor: BackgroundOrganisations
+    security: public

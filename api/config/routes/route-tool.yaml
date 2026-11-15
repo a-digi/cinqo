@@ -22,6 +22,32 @@ routes:
       - tool:manage
       - cinqo:super:admin
 
+  # Unattended use (plan/ai/tools/namako/saas/s7-unattended-monitoring.md): what an installed tool asks to use without a signed-in person, approved or taken back
+  # by an administrator. An install or an update never approves anything.
+  - path: /api/v1/tools/{slug}/background
+    method: GET
+    executor: ToolBackgroundList
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tools/{slug}/background/approve
+    method: POST
+    executor: ToolBackgroundApprove
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tools/{slug}/background/revoke
+    method: POST
+    executor: ToolBackgroundRevoke
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
   - path: /api/v1/tools/{slug}/enable
     method: POST
     executor: ToolEnable
@@ -78,3 +104,27 @@ routes:
     method: DELETE
     executor: ToolProxy
     security: authenticated
+
+  # Unattended calls (plan/ai/tools/namako/saas/s7-unattended-monitoring.md): one tool calling a route of another with its OWN service token while nobody is signed in.
+  # Public because the router's layer would demand a person's bearer token, which these calls do not have: BackgroundProxyHandler checks the service token, the
+  # approval of exactly that route, the route's allow_background flag, the organisation and the rate limit on every call. A person's route above never takes one.
+  - path: /api/v1/tools/{slug}/background-proxy/**
+    method: GET
+    executor: ToolBackgroundProxy
+    security: public
+  - path: /api/v1/tools/{slug}/background-proxy/**
+    method: POST
+    executor: ToolBackgroundProxy
+    security: public
+  - path: /api/v1/tools/{slug}/background-proxy/**
+    method: PUT
+    executor: ToolBackgroundProxy
+    security: public
+  - path: /api/v1/tools/{slug}/background-proxy/**
+    method: PATCH
+    executor: ToolBackgroundProxy
+    security: public
+  - path: /api/v1/tools/{slug}/background-proxy/**
+    method: DELETE
+    executor: ToolBackgroundProxy
+    security: public

@@ -9,6 +9,7 @@ import (
 
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/dashboard"
+	"github.com/a-digi/cinqo/src/organisation"
 )
 
 // diStore mirrors media/handler.diStore — Get isn't part of serverdi.Context.
@@ -41,7 +42,24 @@ func callerFrom(reqCtx request.RequestContext) (dashboard.Caller, error) {
 	if err != nil {
 		return dashboard.Caller{}, err
 	}
-	return dashboard.Caller{UserID: sub, Scopes: scopes, Token: token}, nil
+	return withOrganisation(reqCtx, dashboard.Caller{UserID: sub, Scopes: scopes, Token: token}), nil
+}
+
+// withOrganisation adds the caller's current organisation. A failure to read it leaves it empty (its own cache entry, shared with no organisation): the tool
+// fetch itself refuses a user whose organisation it cannot read.
+func withOrganisation(reqCtx request.RequestContext, c dashboard.Caller) dashboard.Caller {
+	di := reqCtx.GetDI()
+	if di == nil {
+		return c
+	}
+	dm := di.GetDatabaseManager()
+	if dm == nil || dm.Connector == nil || dm.Connector.DB == nil {
+		return c
+	}
+	if org, err := organisation.Of(dm.Connector.DB, c.UserID); err == nil {
+		c.OrgID = org.ID
+	}
+	return c
 }
 
 func tokenFromRequest(r *http.Request) string {

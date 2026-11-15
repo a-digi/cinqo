@@ -3,7 +3,8 @@ import { localAiMenuEntry } from '../../Components/Admin/LocalAi/menuEntry'
 import { HOW_TO_CONTENT } from '../../Components/Admin/HowTo/HowToContent'
 import { HOW_TO_PAGE_IDS, howToPath } from '../../Components/Admin/HowTo/howToRules'
 import { UNEXPECTED_STOPS_PATH } from '../routing/systemPaths'
-import { howToIcons, installedToolsIcon, logsIcon, repositoriesIcon, scopesIcon, unexpectedStopsIcon } from './menuIcons'
+import { ORGANISATIONS_PATH } from '../../Components/Admin/Organisations/organisationRules'
+import { howToIcons, installedToolsIcon, logsIcon, organisationsIcon, repositoriesIcon, scopesIcon, unexpectedStopsIcon } from './menuIcons'
 
 export interface MenuEntry {
   label: string
@@ -92,6 +93,7 @@ export const menuEntries: MenuEntry[] = [
     icon: systemIcon,
     children: [
       { label: 'Unexpected stops', path: UNEXPECTED_STOPS_PATH, scopes: [AppScopes.SystemRead], icon: unexpectedStopsIcon },
+      { label: 'Organisations', path: ORGANISATIONS_PATH, scopes: [AppScopes.OrganisationsAdmin], icon: organisationsIcon },
       {
         label: 'Security',
         icon: securityIcon,

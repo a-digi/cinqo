@@ -25,6 +25,10 @@ export interface AuthMeResponse {
   email?: string
   name?: string
   preferredUsername?: string
+  // The organisation the user belongs to (every user has exactly one); absent when core could not read it.
+  organisationId?: string
+  organisationName?: string
+  organisationStatus?: string
 }
 
 interface AuthConfigRaw {
@@ -42,6 +46,9 @@ interface AuthMeRaw {
   email?: string
   name?: string
   preferred_username?: string
+  organisation_id?: string
+  organisation_name?: string
+  organisation_status?: string
 }
 
 interface RenewResponse {
@@ -73,6 +80,9 @@ export async function fetchAuthMe(): Promise<AuthMeResponse> {
     email: raw.email,
     name: raw.name,
     preferredUsername: raw.preferred_username,
+    organisationId: raw.organisation_id,
+    organisationName: raw.organisation_name,
+    organisationStatus: raw.organisation_status,
   }
 }
 

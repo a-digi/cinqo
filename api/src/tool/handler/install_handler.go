@@ -199,6 +199,21 @@ func cacheReviewTypes(reqCtx request.RequestContext, db *sql.DB, m manifest.Mani
 	}
 }
 
+// cacheBackgroundRequests stores what the manifest asks to use unattended (background_access) and drops every approval that no longer answers a request. It
+// always runs, even for an empty declaration, so an update that stops asking loses its approvals; it never approves anything itself. Non-fatal like the other
+// caches: the worst case is a tool that asks for something and has nothing approved, which is the safe side.
+func cacheBackgroundRequests(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	var reqs []tool_entity.ToolBackgroundRequest
+	for _, decl := range m.BackgroundAccess {
+		for _, rt := range decl.Routes {
+			reqs = append(reqs, tool_entity.ToolBackgroundRequest{ToolID: toolID, TargetSlug: decl.Tool, Method: rt.Method, PathSuffix: rt.PathSuffix})
+		}
+	}
+	if err := tool_persistent.NewToolBackgroundPersistentRepo(db).ReplaceRequests(toolID, reqs); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared background_access but caching it failed: %v", m.Slug, err)
+	}
+}
+
 // publishToolInstalledEvent is the Domain Events engine's own dogfood
 // integration (plan/ai/domain-events/step-01-core-event-bus.md): the
 // smallest possible real proof that domainevent.Publish/Subscribe work
@@ -480,6 +495,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		cacheDashboardWidgets(reqCtx, db, m, tool.ID)
 		cacheCommentTypes(reqCtx, db, m, tool.ID)
 		cacheReviewTypes(reqCtx, db, m, tool.ID)
+		cacheBackgroundRequests(reqCtx, db, m, tool.ID)
 		publishToolInstalledEvent(reqCtx, tool.ID, tool.Slug, tool.Version)
 
 		created, err := queryRepo.FindByID(tool.ID)
@@ -623,6 +639,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	cacheDashboardWidgets(reqCtx, db, m, updated.ID)
 	cacheCommentTypes(reqCtx, db, m, updated.ID)
 	cacheReviewTypes(reqCtx, db, m, updated.ID)
+	cacheBackgroundRequests(reqCtx, db, m, updated.ID)
 	publishToolInstalledEvent(reqCtx, updated.ID, updated.Slug, updated.Version)
 
 	reloaded, err := queryRepo.FindByID(updated.ID)
@@ -647,7 +664,7 @@ func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool
 	}
 	routes := make([]tool_entity.ToolRoute, 0, len(m.Routes))
 	for _, rt := range m.Routes {
-		routes = append(routes, tool_entity.ToolRoute{Method: rt.Method, PathSuffix: rt.PathSuffix, RequiredScope: rt.RequiredScope, AllowCapabilityToken: rt.AllowCapabilityToken})
+		routes = append(routes, tool_entity.ToolRoute{Method: rt.Method, PathSuffix: rt.PathSuffix, RequiredScope: rt.RequiredScope, AllowCapabilityToken: rt.AllowCapabilityToken, AllowBackground: rt.AllowBackground})
 	}
 	required := make([]tool_entity.ToolRequiredScope, 0, len(m.RequiredScopes))
 	for _, s := range m.RequiredScopes {
@@ -679,9 +696,13 @@ func installedToolsMap(queryRepo *tool_query.ToolQueryRepo) (map[string]manifest
 	if err != nil {
 		return nil, err
 	}
+	background, err := queryRepo.BackgroundRoutesBySlug()
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[string]manifest.InstalledToolInfo, len(all))
 	for _, t := range all {
-		out[t.Slug] = manifest.InstalledToolInfo{Version: t.Version, Enabled: t.Enabled}
+		out[t.Slug] = manifest.InstalledToolInfo{Version: t.Version, Enabled: t.Enabled, BackgroundRoutes: background[t.Slug]}
 	}
 	return out, nil
 }

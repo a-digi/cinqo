@@ -16,6 +16,8 @@ import (
 	"syscall"
 
 	"github.com/a-digi/cinqo/src/dashboard"
+	"github.com/a-digi/cinqo/src/organisation"
+	organisation_entity "github.com/a-digi/cinqo/src/organisation/entity"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
 
@@ -107,6 +109,18 @@ func (p *provider) Data(ctx context.Context, caller dashboard.Caller) ([]byte, e
 	req.Header.Set("Accept", "application/json")
 	if caller.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+caller.Token)
+	}
+	// The same organisation header the tool proxy sets: the tool serves this user's organisation only. A suspended organisation gets no data, and an
+	// organisation that cannot be read gets none either (nothing is sent without one).
+	if caller.UserID != "" {
+		org, err := organisation.Of(p.source.db, caller.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("read organisation: %w", err)
+		}
+		if org.Status == organisation_entity.StatusSuspended {
+			return nil, dashboard.ErrUnavailable
+		}
+		req.Header.Set(organisation.Header, org.ID)
 	}
 
 	resp, err := p.source.client.Do(req)

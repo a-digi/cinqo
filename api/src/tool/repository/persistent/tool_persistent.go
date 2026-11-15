@@ -2,6 +2,7 @@ package persistent
 
 import (
 	"database/sql"
+	"errors"
 
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 )
@@ -148,6 +149,30 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tool_review_types WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
+	// What the tool asked to use unattended and what was approved goes with it, and so does every approval OTHER tools hold for this tool's routes
+	// (they named it by slug): a tool installed again under the same slug starts with no approvals.
+	var slug string
+	if err := tx.QueryRow(`SELECT slug FROM tools WHERE id = ?`, id).Scan(&slug); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM tool_background_requests WHERE tool_id = ?`,
+		`DELETE FROM tool_background_grants WHERE tool_id = ?`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return err
+		}
+	}
+	if slug != "" {
+		for _, q := range []string{
+			`DELETE FROM tool_background_requests WHERE target_slug = ?`,
+			`DELETE FROM tool_background_grants WHERE target_slug = ?`,
+		} {
+			if _, err := tx.Exec(q, slug); err != nil {
+				return err
+			}
+		}
+	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {
 		return err
 	}
@@ -172,8 +197,8 @@ func insertChildRows(
 	}
 	for _, rt := range routes {
 		if _, err := tx.Exec(
-			`INSERT INTO tool_routes (tool_id, method, path_suffix, required_scope, allow_capability_token) VALUES (?, ?, ?, ?, ?)`,
-			toolID, rt.Method, rt.PathSuffix, rt.RequiredScope, rt.AllowCapabilityToken,
+			`INSERT INTO tool_routes (tool_id, method, path_suffix, required_scope, allow_capability_token, allow_background) VALUES (?, ?, ?, ?, ?, ?)`,
+			toolID, rt.Method, rt.PathSuffix, rt.RequiredScope, rt.AllowCapabilityToken, rt.AllowBackground,
 		); err != nil {
 			return err
 		}

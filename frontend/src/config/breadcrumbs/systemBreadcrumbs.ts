@@ -1,6 +1,7 @@
 import { HOW_TO_CONTENT } from '../../Components/Admin/HowTo/HowToContent'
 import { isKnownPageId } from '../../Components/Admin/HowTo/howToRules'
 import { READER_PAGE_PATH } from '../../Components/FileReader/readerPageRules'
+import { ORGANISATIONS_PATH } from '../../Components/Admin/Organisations/organisationRules'
 import { UNEXPECTED_STOPS_PATH } from '../routing/systemPaths'
 import type { BreadcrumbRegistration } from './breadcrumbRules'
 
@@ -19,6 +20,7 @@ export const SYSTEM_BREADCRUMBS: readonly BreadcrumbRegistration[] = [
   { path: '/admin/local-ai', items: [{ label: 'AI' }, { label: 'Local Agents' }] },
   { path: '/admin/conversation-logs', items: [{ label: 'AI' }, { label: 'Logs' }] },
   { path: UNEXPECTED_STOPS_PATH, items: [{ label: 'System' }, { label: 'Unexpected stops' }] },
+  { path: ORGANISATIONS_PATH, items: [{ label: 'System' }, { label: 'Organisations' }] },
   { path: '/admin/security/scopes', items: [{ label: 'System' }, { label: 'Security' }, { label: 'Scopes' }] },
   {
     path: `${UNEXPECTED_STOPS_PATH}/:id`,

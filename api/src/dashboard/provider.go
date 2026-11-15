@@ -11,6 +11,9 @@ import (
 // Caller is who a widget's data is being fetched for.
 type Caller struct {
 	UserID string
+	// OrgID is the organisation the user belongs to now (empty when it could not be read). It is part of the cache key: a user who is moved to another
+	// organisation must not be shown the numbers of the one they left.
+	OrgID  string
 	Scopes []string
 	// Token is the caller's own access token. A tool provider forwards it as a
 	// bearer credential, so the tool only ever acts with what that user may do.
