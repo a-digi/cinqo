@@ -15,6 +15,7 @@ func TestOnlyTheChromeDrivingRoutesTakeASessionSlot(t *testing.T) {
 	wrapped := map[string]bool{
 		"/crawl": true, "/find-login-elements": true, "/extract": true, "/crawl-paginated": true, "/find-repeating-items": true,
 		"/fetch-links": true, "/fetch-detail-candidates": true, "/diagnose-url": true, "/engine-test": true,
+		"/list-links": true, "/fetch-frames": true, "/capture-network": true, "/page-archive": true, // Namako step 1: evidence routes drive Chrome
 	}
 	seen := map[string]bool{}
 	for _, line := range strings.Split(string(raw), "\n") {
@@ -39,7 +40,7 @@ func TestOnlyTheChromeDrivingRoutesTakeASessionSlot(t *testing.T) {
 		}
 	}
 	// the login windows and the visible window are driven by a person and never take a slot
-	for _, p := range []string{"/login-window/open", "/katana-window-open", "/chrome-processes", "/engine-status", "/healthz"} {
+	for _, p := range []string{"/login-window/open", "/katana-window-open", "/chrome-processes", "/engine-status", "/healthz", "/fetch-media", "/capture-file", "/media-file", "/capture", "/security-settings"} {
 		if wrapped[p] {
 			t.Errorf("%s must not be wrapped", p)
 		}

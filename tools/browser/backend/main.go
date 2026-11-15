@@ -114,6 +114,16 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-paginated", chromeproc.LimitSessions(crawler.PaginatedCrawlHandler))
 	http.HandleFunc("/find-repeating-items", chromeproc.LimitSessions(crawler.FindRepeatingItemsHandler))
 	http.HandleFunc("/fetch-links", chromeproc.LimitSessions(crawler.FetchLinksHandler))
+	// Namako step 1: evidence routes. The Chrome ones are limited like every crawl; media and file routes use no browser.
+	http.HandleFunc("/fetch-frames", chromeproc.LimitSessions(crawler.FetchFramesHandler))
+	http.HandleFunc("/capture-network", chromeproc.LimitSessions(crawler.CaptureNetworkHandler))
+	http.HandleFunc("/list-links", chromeproc.LimitSessions(crawler.ListLinksHandler))
+	http.HandleFunc("/page-archive", chromeproc.LimitSessions(crawler.PageArchiveHandler))
+	http.HandleFunc("/fetch-media", crawler.FetchMediaHandler)
+	http.HandleFunc("/capture-file", crawler.CaptureFileHandler)
+	http.HandleFunc("/media-file", crawler.MediaFileHandler)
+	http.HandleFunc("/capture", crawler.CaptureHandler)
+	http.HandleFunc("/security-settings", shared.SecuritySettingsHandler)
 	http.HandleFunc("/page-snapshot", crawler.PageSnapshotHandler)                // plan 247
 	http.HandleFunc("/page-snapshots", crawler.PageSnapshotsHandler)              // plan 247
 	http.HandleFunc("/temp-files", crawler.TempFilesHandler)                      // plan 248
@@ -169,6 +179,8 @@ func runMCPServer() {
 	crawler.RegisterCrawlPaginated(server)
 	crawler.RegisterExtractFromURL(server)
 	crawler.RegisterFindRepeatingItems(server)
+	crawler.RegisterFetchFrames(server)
+	crawler.RegisterCaptureNetwork(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)

@@ -114,6 +114,7 @@ func inventoryTempFiles() tempInventory {
 	inv.Bytes, inv.Files = measure(root)
 	pcBytes, pcFiles := measure(shared.PageSnapshotsDir)
 	cacheBytes, cacheFiles := measure(shared.FetchCacheDir)
+	capBytes, capFiles := measure(shared.CapturesDir)
 	var profBytes int64
 	var profFiles int
 	if within(root, chromeproc.ProfileRoot()) {
@@ -128,9 +129,10 @@ func inventoryTempFiles() tempInventory {
 	inv.Parts = append(inv.Parts,
 		tempPart{ID: "page_copies", Label: "Page copies", Bytes: pcBytes, Files: pcFiles},
 		tempPart{ID: "page_cache", Label: "Page cache", Bytes: cacheBytes, Files: cacheFiles},
+		tempPart{ID: "captures", Label: "Evidence captures and downloads", Bytes: capBytes, Files: capFiles},
 		tempPart{ID: "chrome_profiles", Label: "Browser profiles", Bytes: profBytes, Files: profFiles, InUse: inUse},
 	)
-	if ob, of := inv.Bytes-pcBytes-cacheBytes-profBytes, inv.Files-pcFiles-cacheFiles-profFiles; ob > 0 || of > 0 {
+	if ob, of := inv.Bytes-pcBytes-cacheBytes-capBytes-profBytes, inv.Files-pcFiles-cacheFiles-capFiles-profFiles; ob > 0 || of > 0 {
 		inv.Parts = append(inv.Parts, tempPart{ID: "other", Label: "Other", Bytes: ob, Files: of})
 	}
 	return inv
@@ -154,6 +156,9 @@ func ClearTemporaryFiles() tempClearResult {
 	add(removeInside(shared.FetchCacheDir, nil))
 	fetchCacheMu.Unlock()
 
+	// Evidence captures and media downloads (Namako step 1): temporary like the rest. Namako copies what it keeps and releases the rest itself.
+	add(removeInside(shared.CapturesDir, nil))
+
 	running := 0
 	for _, f := range chromeproc.ProfileFolders() {
 		if !within(root, f.Path) {
@@ -175,7 +180,7 @@ func ClearTemporaryFiles() tempClearResult {
 		ledgerDir = "" // a ledger folder outside (or being) the temporary folder is not cleaned here
 	}
 	profileRoot := chromeproc.ProfileRoot()
-	known := map[string]bool{shared.FetchCacheDir: true, shared.PageSnapshotsDir: true}
+	known := map[string]bool{shared.FetchCacheDir: true, shared.PageSnapshotsDir: true, shared.CapturesDir: true}
 	add(removeInside(root, func(name string, _ bool) bool {
 		path := filepath.Join(root, name)
 		return known[path] || (ledgerDir != "" && path == ledgerDir)

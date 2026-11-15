@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.258",
+  "version": "0.0.260",
   "description": "Opens and reads web pages for the other tools with Chrome; shows a window when a site asks you to prove you are human.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -15,7 +15,11 @@
     },
     {
       "scope": "tool:browser:login",
-      "description": "Open a login window for a crawl run and confirm the login (the person logs in on the site itself; no password is ever stored), and see or forget a saved login session (sealed cookies of one site, kept only when the person chose to)."
+      "description": "Open a login window for a crawl run and confirm the login (the person logs in on the site itself; no password is ever stored), and see or forget a saved login session (sealed cookies of one site, kept only when the person chose to), and change the security settings (allowed test hosts, media downloads on or off)."
+    },
+    {
+      "scope": "tool:browser:download",
+      "description": "Download media files (a stream's playlist and segments, or a video file) to the temporary captures folder, and read them back. Needs the Browser security setting \"allow media downloads\" to be on. Never used by an AI tool."
     }
   ],
   "file_sources": [
@@ -226,6 +230,56 @@
       "method": "GET",
       "path_suffix": "dashboard/status",
       "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "fetch-frames",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "capture-network",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "list-links",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "page-archive",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "capture-file",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "capture",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "fetch-media",
+      "required_scope": "tool:browser:download"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "media-file",
+      "required_scope": "tool:browser:download"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "security-settings",
+      "required_scope": "tool:browser:login"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "security-settings",
+      "required_scope": "tool:browser:login"
     }
   ],
   "mcp_tools": [
@@ -251,6 +305,14 @@
     },
     {
       "name": "find_repeating_items",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "name": "fetch_frames",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "name": "capture_network",
       "required_scope": "tool:browser:crawl"
     }
   ],

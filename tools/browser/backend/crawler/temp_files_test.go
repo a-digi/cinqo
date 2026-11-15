@@ -371,3 +371,39 @@ func TestTheLogLineOfAnAutomaticClear(t *testing.T) {
 		t.Errorf("%q", got)
 	}
 }
+
+// Namako step 1: the captures folder is a part of the temporary files, counted and cleared with the rest (its folder stays, its contents go).
+func TestTheCapturesFolderIsAPartOfTheTemporaryFilesAndIsCleared(t *testing.T) {
+	root := tempFolder(t)
+	id, dir, err := newCapture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeArtifact(dir, "screenshot.png", "screenshot", make([]byte, 400)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeArtifact(dir, "media/media.mp4", "stream_media", make([]byte, 600)); err != nil {
+		t.Fatal(err)
+	}
+	inv := inventoryTempFiles()
+	caps := part(inv, "captures")
+	if caps.Files != 2 || caps.Bytes != 1000 || caps.Label == "" {
+		t.Errorf("captures part: %+v", caps)
+	}
+	if o := part(inv, "other"); o.Bytes >= 1000 {
+		t.Errorf("the captures must not be counted again as 'other' (only the Chrome ledger is in it here): %+v", o)
+	}
+	res := ClearTemporaryFiles()
+	if res.DeletedFiles < 2 || exists(dir) {
+		t.Errorf("the capture must be cleared: %+v exists=%v", res, exists(dir))
+	}
+	if !exists(shared.CapturesDir) || filepath.Dir(shared.CapturesDir) != root {
+		t.Error("the captures folder itself must stay so the next capture can be made")
+	}
+	if _, err := captureDir(id); err == nil {
+		t.Error("a cleared capture is gone")
+	}
+	if _, _, err := newCapture(); err != nil {
+		t.Errorf("a new capture can be made after a clear: %v", err)
+	}
+}

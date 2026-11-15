@@ -882,11 +882,21 @@ func validateCrawlURL(rawURL string) error {
 		return fmt.Errorf("could not resolve host %q: %w", u.Hostname(), err)
 	}
 	for _, ip := range ips {
-		if isDisallowedIP(ip) {
+		if isDisallowedIP(ip) && !testHostMayBeLoopback(u.Hostname(), ip) {
 			return fmt.Errorf("refusing to crawl %q: resolves to a private/internal address", u.Hostname())
 		}
 	}
 	return nil
+}
+
+// testHostAllowedFn says whether a host name is one of the exact test hosts an admin allowed in the security settings (a var so a test can
+// replace it).
+var testHostAllowedFn = shared.TestHostAllowed
+
+// testHostMayBeLoopback is the one exception to the rule above: a host name that is exactly in the allowed test hosts may resolve to a LOOPBACK
+// address (a test site on this computer). A private, link-local or unspecified address is never let through, not even for a listed host.
+func testHostMayBeLoopback(host string, ip net.IP) bool {
+	return ip.IsLoopback() && testHostAllowedFn(host)
 }
 
 // isDisallowedIP rejects loopback, private (RFC 1918), and link-local

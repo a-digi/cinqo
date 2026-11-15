@@ -35,6 +35,9 @@ var (
 	// PageSnapshotsDir holds the sanitised page copies the Career picker shows (plan 247): one .html and one .json per snapshot, deleted when the
 	// picker closes, by an age sweep, or by the manual "delete temporary files" button. Always safe to remove.
 	PageSnapshotsDir string
+	// CapturesDir holds the evidence captures (page-archive screenshots, DOM copies, network logs) and the media downloads of /fetch-media: one
+	// subfolder per capture id, inside the cache folder, so the temporary-files cleanup covers it (Namako copies what it keeps and then releases it).
+	CapturesDir string
 	// CacheRoot is the tool's whole cache folder (TOOL_CACHE_DIR, absolute): the temporary files folder that Browser & Engine shows and clears (plan 248).
 	// FetchCacheDir, PageSnapshotsDir and the Chrome profile root all live inside it.
 	CacheRoot string
@@ -94,6 +97,11 @@ func InitDB() error {
 	PageSnapshotsDir = filepath.Join(cacheDir, "page_snapshots")
 	if err := os.MkdirAll(PageSnapshotsDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create page_snapshots directory: %w", err)
+	}
+
+	CapturesDir = filepath.Join(cacheDir, "captures")
+	if err := os.MkdirAll(CapturesDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create captures directory: %w", err)
 	}
 
 	ChallengeLogsDir = filepath.Join(logsDir, "challenge_logs")
@@ -204,6 +212,12 @@ func InitDB() error {
 	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine) VALUES (1, 0, 0, 0, ?)`, DefaultFetchEngine); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to seed browser_settings: %w", err)
+	}
+
+	// browser_security_settings (Namako step 1): the allowed test hosts and the media-download switch (shared/security_settings.go).
+	if err := ensureSecuritySettingsTable(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare browser_security_settings: %w", err)
 	}
 
 	// cloudflare_domains (step 28) — a persistent record of every
