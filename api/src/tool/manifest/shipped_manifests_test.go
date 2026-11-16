@@ -131,7 +131,7 @@ func TestNamakoAsksForExactlyTheBrowserRoutesItNeedsUnattendedAndTheRulesAcceptI
 		t.Errorf("%v", err)
 	}
 	// and the versions that make it work are required: the browser that marks the routes, the core that knows the rules
-	if n.RequiresTools[0].Slug != "browser" || n.RequiresTools[0].MinVersion != "0.0.269" {
+	if n.RequiresTools[0].Slug != "browser" || n.RequiresTools[0].MinVersion != "0.0.270" {
 		t.Errorf("%+v", n.RequiresTools)
 	}
 	if cmp, _ := CompareVersions(b.Version, "0.0.269"); cmp < 0 {

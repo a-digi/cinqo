@@ -3,6 +3,8 @@
 // comes with a selector that matches exactly ONE element of the page (so the Namako side can build a page recipe from it without inventing a selector) and with
 // where it is on the page, so a frame can be pressed by its position.
 //
+// It also LISTS (never presses) the layers that may be in the way of the player: a cookie banner, an age gate, a skip bar, a close button, or whatever covers the player.
+//
 // What counts: visible buttons, links, tabs and elements that look pressable (a role, an onclick handler, a pointer cursor) whose words (text, title, aria-label,
 // id, class) talk about playing or choosing a server, plus every visible frame of a useful size (a player is a frame). The page's own words are DATA: they are cut
 // short, never evaluated, and the Namako side validates anything built from them.
@@ -18,6 +20,7 @@ import (
 )
 
 const (
+	maxLayers             = 8
 	maxClickables         = 40
 	maxClickableFrames    = 10
 	defaultClickablesWait = 1500
@@ -44,11 +47,30 @@ type Clickable struct {
 	Why      []string `json:"why,omitempty"` // in words: what made it a candidate
 }
 
+// Layer is something that may be in the way of the player: a cookie banner, an age gate, a "skip" bar, a close button, or the layer that covers the player. It is
+// only LISTED: the Browser never presses it. A person decides (per page) whether it may be pressed before the player is tried.
+type Layer struct {
+	ID           string `json:"id"`   // l1, l2 …
+	Kind         string `json:"kind"` // cookie, age, skip, close or cover
+	Tag          string `json:"tag"`
+	Text         string `json:"text,omitempty"`
+	Label        string `json:"label,omitempty"`
+	Selector     string `json:"selector"`
+	Leaves       bool   `json:"leaves,omitempty"`
+	CoversPlayer bool   `json:"coversPlayer,omitempty"` // it sits on top of the player (or of a play control)
+	X            int    `json:"x"`
+	Y            int    `json:"y"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+}
+
 // ClickablesResult is the answer of /find-clickables.
 type ClickablesResult struct {
 	FinalURL  string      `json:"finalUrl"`
 	Items     []Clickable `json:"items"`
 	Truncated bool        `json:"truncated"`
+	// Layers are what may be in the way (see Layer); never part of Items.
+	Layers []Layer `json:"layers"`
 }
 
 type findClickablesRequest struct {
@@ -141,12 +163,88 @@ const clickablesScript = `(function(){
     controls.push({ order: order, score: score, item: { kind: "control", tag: tag, text: text, label: label, selector: sel, href: hrefShort, leaves: leaves, x: b.x, y: b.y, width: b.width, height: b.height, why: reasons } });
   });
   controls.sort(function(a, b){ return b.score - a.score || a.order - b.order; });
-  return { frames: frames, controls: controls.map(function(c){ return c.item; }) };
+
+  // Layers: things that may be in the way of the player. Read only (elementFromPoint, no scroll, no event).
+  var layers = [], layerSeen = new Set();
+  var CLOSE_TEXT = /^(x|\u00d7|\u2715|\u2716|\u2573|close|dismiss|no thanks|not now|maybe later)$/i;
+  var CLOSE_WORDS = /close|dismiss|btn-x|modal-x/i;
+  var SKIP_TEXT = /^(skip( ad| ads)?|close ad|continue to (video|site|player))$/i;
+  var AGE_TEXT = /(over|above|older than)\s*18|\b18\s*\+|i am 18|enter (the )?site|i'm 18/i;
+  var COOKIE_TEXT = /^(accept( all| cookies)?|agree|i agree|allow( all)?|got it|ok|okay|consent)$/i;
+  var COOKIE_CTX = /cookie|consent|gdpr|privacy|cmp|onetrust/i;
+  function ancestorsText(e){ var t = "", c = e; for (var i = 0; i < 5 && c && c !== document.body; i++) { t += " " + (c.id||"") + " " + (c.getAttribute("class")||""); c = c.parentElement; } return t; }
+  function pressableEl(e){ var tag = e.tagName.toLowerCase(); var role = e.getAttribute("role") || ""; return tag === "button" || tag === "a" || role === "button" || e.hasAttribute("onclick") || tag === "input" || getComputedStyle(e).cursor === "pointer"; }
+  function kindOfControl(e){
+    var text = clean(e.innerText || e.value || ""), label = clean(e.getAttribute("aria-label") || e.getAttribute("title") || ""), idc = (e.id||"") + " " + (e.getAttribute("class")||"");
+    var r = e.getBoundingClientRect();
+    if (AGE_TEXT.test(text) || AGE_TEXT.test(label)) return "age";
+    if (SKIP_TEXT.test(text) || SKIP_TEXT.test(label)) return "skip";
+    if (COOKIE_TEXT.test(text) && COOKIE_CTX.test(ancestorsText(e))) return "cookie";
+    if ((CLOSE_TEXT.test(text) || CLOSE_TEXT.test(label) || CLOSE_WORDS.test(idc)) && r.width <= 160 && r.height <= 160) return "close";
+    return "";
+  }
+  function addLayer(e, kind, covers){
+    if (layers.length >= 12 || layerSeen.has(e)) return;
+    var sel = selector(e);
+    if (!sel || sel.length > 200) return;
+    layerSeen.add(e);
+    var tag = e.tagName.toLowerCase(), href = tag === "a" ? (e.getAttribute("href") || "") : "", leaves = false;
+    if (href && !/^(#|javascript:)/i.test(href)) { try { var u = new URL(href, location.href); leaves = u.origin !== origin || u.pathname !== location.pathname; } catch (x) {} }
+    var b = box(e);
+    layers.push({ kind: kind, tag: tag, text: clean(e.innerText || e.value || "").slice(0, 120), label: clean(e.getAttribute("aria-label") || e.getAttribute("title") || ""), selector: sel, leaves: leaves, coversPlayer: !!covers, x: b.x, y: b.y, width: b.width, height: b.height });
+  }
+  // 1. what sits on top of a player frame or a play control
+  var targets = Array.prototype.slice.call(document.querySelectorAll("iframe")).filter(function(f){ return seen.has(f); });
+  controls.slice(0, 3).forEach(function(c){ try { var el = document.querySelector(c.item.selector); if (el) targets.push(el); } catch (x) {} });
+  targets.forEach(function(t){
+    var r = t.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) return;
+    var top = document.elementFromPoint(cx, cy);
+    if (!top || top === t || t.contains(top) || top === document.body || top === document.documentElement) return;
+    var root = top;
+    while (root.parentElement && root.parentElement !== document.body && root.parentElement !== document.documentElement) {
+      var pr = root.parentElement.getBoundingClientRect();
+      if (pr.left > cx || pr.right < cx || pr.top > cy || pr.bottom < cy || pr.width * pr.height > window.innerWidth * window.innerHeight * 1.5) break;
+      root = root.parentElement;
+    }
+    var inner = Array.prototype.slice.call(root.querySelectorAll("button, a, [role=button], [onclick], span, div, i")).filter(function(e){ return visible(e) && pressableEl(e) && kindOfControl(e) !== ""; });
+    if (inner.length > 0) addLayer(inner[0], kindOfControl(inner[0]) === "cookie" || kindOfControl(inner[0]) === "age" || kindOfControl(inner[0]) === "skip" ? kindOfControl(inner[0]) : "close", true);
+    else addLayer(root, "cover", true);
+  });
+  // 2. controls that are a cookie banner, an age gate, a skip bar or a close button anywhere on the page
+  Array.prototype.forEach.call(document.querySelectorAll("button, a, [role=button], [onclick], input[type=button], span, div, i"), function(e){
+    if (!visible(e) || !pressableEl(e)) return;
+    var k = kindOfControl(e);
+    if (k) addLayer(e, k, false);
+  });
+  var rank = { cover: 0, close: 1, age: 2, cookie: 3, skip: 4 };
+  layers.sort(function(a, b){ return (b.coversPlayer ? 1 : 0) - (a.coversPlayer ? 1 : 0) || rank[a.kind] - rank[b.kind]; });
+  return { frames: frames, controls: controls.map(function(c){ return c.item; }), layers: layers };
 })()`
 
 type clickablesRaw struct {
 	Frames   []Clickable `json:"frames"`
 	Controls []Clickable `json:"controls"`
+	Layers   []Layer     `json:"layers"`
+}
+
+var layerKinds = map[string]bool{"cookie": true, "age": true, "skip": true, "close": true, "cover": true}
+
+// arrangeLayers numbers the layers (l1..), cuts the words, drops what has no usable selector or a kind that is not one of the five, and keeps at most maxLayers.
+func arrangeLayers(in []Layer) []Layer {
+	out := []Layer{}
+	for _, l := range in {
+		if len(out) >= maxLayers {
+			break
+		}
+		if !layerKinds[l.Kind] || strings.TrimSpace(l.Selector) == "" || len(l.Selector) > clickableSelectorMax || strings.ContainsAny(l.Selector, "\x00\r\n") {
+			continue
+		}
+		l.ID = fmt.Sprintf("l%d", len(out)+1)
+		l.Text, l.Label = cutText(l.Text, clickableTextMax), cutText(l.Label, clickableTextMax)
+		out = append(out, l)
+	}
+	return out
 }
 
 // cutText keeps a page's words short and one line.
@@ -241,5 +339,5 @@ func findClickables(ctx context.Context, req findClickablesRequest) (ClickablesR
 		final = info.URL
 	}
 	items, truncated := arrangeClickables(raw)
-	return ClickablesResult{FinalURL: final, Items: items, Truncated: truncated}, nil
+	return ClickablesResult{FinalURL: final, Items: items, Truncated: truncated, Layers: arrangeLayers(raw.Layers)}, nil
 }

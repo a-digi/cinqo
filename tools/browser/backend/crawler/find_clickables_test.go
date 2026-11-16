@@ -244,3 +244,145 @@ func TestAPageWithNothingToPressGivesAnEmptyListNotAnError(t *testing.T) {
 		t.Errorf("%v %+v", err, res)
 	}
 }
+
+func TestTheLayersAreNumberedCutShortFilteredAndCapped(t *testing.T) {
+	long := strings.Repeat("a", 90)
+	got := arrangeLayers([]Layer{
+		{Kind: "close", Selector: "#x", Text: "  ×  ", Label: long},
+		{Kind: "nonsense", Selector: "#y"},
+		{Kind: "cookie", Selector: ""},
+		{Kind: "age", Selector: strings.Repeat("a", clickableSelectorMax+1)},
+		{Kind: "skip", Selector: "a\nb"},
+		{Kind: "age", Selector: strings.Repeat("a", clickableSelectorMax)},
+		{Kind: "cover", Selector: "div.cover", CoversPlayer: true},
+	})
+	if len(got) != 3 || got[0].ID != "l1" || got[1].ID != "l2" || got[2].ID != "l3" || got[2].Kind != "cover" || !got[2].CoversPlayer {
+		t.Fatalf("%+v", got)
+	}
+	if got[0].Text != "×" || len([]rune(got[0].Label)) != clickableTextMax || !strings.HasSuffix(got[0].Label, "…") {
+		t.Errorf("words are one short line: %+v", got[0])
+	}
+	var many []Layer
+	for i := 0; i < maxLayers+4; i++ {
+		many = append(many, Layer{Kind: "close", Selector: fmt.Sprintf("#c%d", i)})
+	}
+	if got := arrangeLayers(many); len(got) != maxLayers || got[maxLayers-1].ID != fmt.Sprintf("l%d", maxLayers) {
+		t.Errorf("at most %d layers: %d", maxLayers, len(got))
+	}
+	if got := arrangeLayers(nil); got == nil || len(got) != 0 {
+		t.Errorf("no layers is an empty list, not null: %#v", got)
+	}
+}
+
+// layerMock serves pages with things in the way; /count/ records any press, so the test can show the read pressed nothing.
+func layerMock(t *testing.T) (string, *int32) {
+	t.Helper()
+	var n int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/count", func(w http.ResponseWriter, r *http.Request) { atomic.AddInt32(&n, 1) })
+	count := `onclick="fetch('/count')"`
+	mux.HandleFunc("/sponsor", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `<html><body style="margin:0"><button id="server2" class="server" %[1]s>Server 2</button>
+<iframe id="pf" src="about:blank" width="400" height="220" style="display:block;border:0"></iframe>
+<div id="sponsor" style="position:fixed;left:0;top:0;width:100%%;height:100%%;background:#000;color:#fff;z-index:99">Our sponsor <button id="shut" %[1]s style="width:40px;height:30px">×</button></div></body></html>`, count)
+	})
+	mux.HandleFunc("/coveronly", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `<html><body style="margin:0"><iframe id="pf" src="about:blank" width="400" height="220" style="display:block;border:0"></iframe>
+<div id="veil" %[1]s style="position:fixed;left:0;top:0;width:100%%;height:100%%;z-index:99;background:#222"></div></body></html>`, count)
+	})
+	mux.HandleFunc("/gates", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `<html><body><iframe id="pf" src="about:blank" width="400" height="220"></iframe>
+<div id="cookie-banner"><button id="acc" %[1]s>Accept all</button></div>
+<div id="plain"><button id="acc2" %[1]s>Accept all</button></div>
+<button id="gate" %[1]s>I am over 18</button>
+<span id="skipbar" role="button" %[1]s>Skip ad</span>
+<a id="adx" href="http://ads.example.net/x" aria-label="Close" style="display:inline-block;width:30px;height:30px">x</a>
+<button id="hidden" style="display:none" %[1]s>Accept all</button>
+<p>Close to nothing</p></body></html>`, count)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return strings.Split(srv.Listener.Addr().String(), ":")[1], &n
+}
+
+func layersOf(t *testing.T, port, path string) ClickablesResult {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	res, err := findClickables(ctx, findClickablesRequest{URL: "http://a.localhost:" + port + path, WaitMs: 400})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func TestALayerOverThePlayerOffersItsCloseButtonAndNothingIsPressed(t *testing.T) {
+	requireRodChrome(t)
+	port, presses := layerMock(t)
+	res := layersOf(t, port, "/sponsor")
+	if len(res.Layers) == 0 {
+		t.Fatalf("no layers: %+v", res)
+	}
+	first := res.Layers[0]
+	if first.ID != "l1" || first.Kind != "close" || first.Selector != "#shut" || first.Text != "×" || !first.CoversPlayer || first.Leaves {
+		t.Errorf("the close button inside the layer over the player comes first: %+v", first)
+	}
+	if atomic.LoadInt32(presses) != 0 {
+		t.Errorf("the page was pressed %d times: layers are only listed", *presses)
+	}
+	for _, it := range res.Items {
+		if it.Selector == "#shut" {
+			t.Errorf("a layer is never part of the items: %+v", it)
+		}
+	}
+}
+
+func TestACoverWithNothingToCloseIsOfferedItself(t *testing.T) {
+	requireRodChrome(t)
+	port, presses := layerMock(t)
+	res := layersOf(t, port, "/coveronly")
+	if len(res.Layers) != 1 || res.Layers[0].Kind != "cover" || res.Layers[0].Selector != "#veil" || !res.Layers[0].CoversPlayer || atomic.LoadInt32(presses) != 0 {
+		t.Errorf("%+v presses %d", res.Layers, *presses)
+	}
+}
+
+func TestCookieAgeSkipAndCloseControlsAreListedWithTheirKind(t *testing.T) {
+	requireRodChrome(t)
+	port, presses := layerMock(t)
+	res := layersOf(t, port, "/gates")
+	byID := map[string]Layer{}
+	for _, l := range res.Layers {
+		byID[strings.TrimPrefix(l.Selector, "#")] = l
+	}
+	for sel, kind := range map[string]string{"acc": "cookie", "gate": "age", "skipbar": "skip", "adx": "close"} {
+		if l, ok := byID[sel]; !ok || l.Kind != kind || l.CoversPlayer {
+			t.Errorf("%s should be a %s layer: %+v", sel, kind, l)
+		}
+	}
+	if _, ok := byID["acc2"]; ok {
+		t.Error("an Accept button outside a cookie banner is not a layer")
+	}
+	if _, ok := byID["hidden"]; ok {
+		t.Error("a hidden control is not a layer")
+	}
+	if l := byID["adx"]; !l.Leaves {
+		t.Errorf("a close button that is an ad link says it leaves the page: %+v", l)
+	}
+	if atomic.LoadInt32(presses) != 0 {
+		t.Errorf("pressed %d times", *presses)
+	}
+}
+
+func TestAPageWithNothingInTheWayHasAnEmptyLayerList(t *testing.T) {
+	requireRodChrome(t)
+	port, _ := clickMock(t)
+	res := layersOf(t, port, "/")
+	if res.Layers == nil {
+		t.Errorf("no layers must be an empty list: %+v", res)
+	}
+	for _, l := range res.Layers {
+		if l.CoversPlayer {
+			t.Errorf("nothing covers the player on this page: %+v", l)
+		}
+	}
+}
