@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.264",
+  "version": "0.0.267",
   "description": "Opens and reads web pages for the other tools with Chrome; shows a window when a site asks you to prove you are human.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -273,6 +273,11 @@
     {
       "method": "POST",
       "path_suffix": "fetch-media",
+      "required_scope": "tool:browser:download"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "relay",
       "required_scope": "tool:browser:download"
     },
     {

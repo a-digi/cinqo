@@ -87,7 +87,7 @@ func openEvidencePage(ctx context.Context, rawURL, requestID string, handlers ..
 		closeAll()
 		return nil, rodNavigationError(ctx, err)
 	}
-	if err := p.WaitLoad(); err != nil {
+	if err := p.WaitLoad(); err != nil && loadWaitIsFatal(ctx, err) {
 		closeAll()
 		return nil, rodNavigationError(ctx, err)
 	}
@@ -136,4 +136,14 @@ func evidenceCloudflareVerdict(ctx context.Context, p *rod.Page, main *mainDocum
 		return cfErr
 	}
 	return nil
+}
+
+// loadWaitIsFatal says whether a failed "wait for the load event" ends the visit. Some sites make Chrome answer the wait's own script with "Object reference chain is
+// too long" (the script's result cannot be serialised on that page): the page was navigated to and is there, so it is read as it is, like a page that never fires
+// its load event. Anything else (the caller's cancellation, a dead tab) still ends the visit.
+func loadWaitIsFatal(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	return !strings.Contains(err.Error(), "Object reference chain is too long")
 }

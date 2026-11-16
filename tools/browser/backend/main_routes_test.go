@@ -40,7 +40,7 @@ func TestOnlyTheChromeDrivingRoutesTakeASessionSlot(t *testing.T) {
 		}
 	}
 	// the login windows and the visible window are driven by a person and never take a slot
-	for _, p := range []string{"/login-window/open", "/katana-window-open", "/chrome-processes", "/engine-status", "/healthz", "/fetch-media", "/capture-file", "/media-file", "/capture", "/security-settings"} {
+	for _, p := range []string{"/login-window/open", "/katana-window-open", "/chrome-processes", "/engine-status", "/healthz", "/fetch-media", "/relay", "/capture-file", "/media-file", "/capture", "/security-settings"} {
 		if wrapped[p] {
 			t.Errorf("%s must not be wrapped", p)
 		}

@@ -87,7 +87,7 @@ func TestManifestDeclaresTheEngineStatusRouteWithItsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	var m struct {
-		Routes []map[string]string `json:"routes"`
+		Routes []map[string]any `json:"routes"`
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
@@ -104,14 +104,14 @@ func TestManifestDeclaresTheEngineStatusRouteWithItsScope(t *testing.T) {
 }
 
 // readManifest returns the Browser tool manifest's declared routes.
-func readManifest(t *testing.T) []map[string]string {
+func readManifest(t *testing.T) []map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var m struct {
-		Routes []map[string]string `json:"routes"`
+		Routes []map[string]any `json:"routes"`
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)

@@ -156,7 +156,7 @@ func TestFetchLinksIsAListedRouteOfTheManifest(t *testing.T) {
 	}
 	// field names in the manifest are snake_case
 	var generic struct {
-		Routes []map[string]string `json:"routes"`
+		Routes []map[string]any `json:"routes"`
 	}
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		t.Fatal(err)

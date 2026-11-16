@@ -109,7 +109,7 @@ func TestNamakoAsksForExactlyTheBrowserRoutesItNeedsUnattendedAndTheRulesAcceptI
 		t.Errorf("%v", asked)
 	}
 	for _, a := range asked {
-		for _, attended := range []string{"page-archive", "fetch-manifest", "capture-file", "fetch-media", "media-file", "login", "security"} {
+		for _, attended := range []string{"page-archive", "fetch-manifest", "capture-file", "fetch-media", "relay", "media-file", "login", "security"} {
 			if strings.Contains(a, attended) {
 				t.Errorf("%s is a person's action", a)
 			}
@@ -131,11 +131,11 @@ func TestNamakoAsksForExactlyTheBrowserRoutesItNeedsUnattendedAndTheRulesAcceptI
 		t.Errorf("%v", err)
 	}
 	// and the versions that make it work are required: the browser that marks the routes, the core that knows the rules
-	if n.RequiresTools[0].Slug != "browser" || n.RequiresTools[0].MinVersion != "0.0.262" {
+	if n.RequiresTools[0].Slug != "browser" || n.RequiresTools[0].MinVersion != "0.0.267" {
 		t.Errorf("%+v", n.RequiresTools)
 	}
-	if cmp, _ := CompareVersions(b.Version, "0.0.262"); cmp < 0 {
-		t.Errorf("the Browser that marks the routes is 0.0.262 or newer: %s", b.Version)
+	if cmp, _ := CompareVersions(b.Version, "0.0.267"); cmp < 0 {
+		t.Errorf("the Browser that marks the routes and keeps a stand-in for a player in its page copies is 0.0.267 or newer: %s", b.Version)
 	}
 	if n.MinAppVersion != "0.0.4" {
 		t.Errorf("Namako needs the core that has unattended calls (api/VERSION 0.0.4, which also names the organisations to work for): %q", n.MinAppVersion)

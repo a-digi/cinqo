@@ -8,11 +8,11 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-15T20:36:40Z",
+  "generatedAt": "2026-11-16T12:29:58Z",
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.264",
+      "currentVersionId": "0.0.267",
       "versions": [
         {
           "authors": [
@@ -22,39 +22,39 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.264",
+          "versionId": "0.0.267",
           "name": "Browser",
           "description": "Opens and reads web pages for the other tools with Chrome; shows a window when a site asks you to prove you are human.",
-          "version": "0.0.264",
-          "releasedAt": "2026-11-15",
+          "version": "0.0.267",
+          "releasedAt": "2026-11-16",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "f75726d0f8701d27af07103e03345098a434b30281f83583a66af21994c0b820",
-              "sizeBytes": 46263651
+              "sha256": "74f20836ceefbb2904c9a799e890bacc2b74a902de723ca240730995fbdb1cca",
+              "sizeBytes": 46278835
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "4b00e2321bb6e2b4185dc396a803a140348aaa474673b55f34fc9d145719a21d",
-              "sizeBytes": 46221874
+              "sha256": "a85e7893d5c687148a5c4916d72f687557cdd01133a5730566fe7a1d37398e00",
+              "sizeBytes": 46240834
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "aef66d699b4f90e4263f0d0227edc3c891a41cf631eca58101dc6a4423e4ce09",
-              "sizeBytes": 44040339
+              "sha256": "675a94dc29fba0e44652b4c7468a2db62abb961852730ef86b1fa910fbe7e555",
+              "sizeBytes": 44057595
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "5f9812f5b4356cfc24104601b7b8c2472f437550624fe8878da76b59d394e14d",
-              "sizeBytes": 30852672
+              "sha256": "9031ac7233a695a87afb0f4c0e1700fbc450d2b04bc98456b63260700d5c3fe0",
+              "sizeBytes": 30866407
             }
           ]
         }

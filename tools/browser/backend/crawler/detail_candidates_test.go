@@ -26,7 +26,7 @@ func TestFetchDetailCandidatesIsAListedRouteOfTheManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	var generic struct {
-		Routes []map[string]string `json:"routes"`
+		Routes []map[string]any `json:"routes"`
 	}
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		t.Fatal(err)

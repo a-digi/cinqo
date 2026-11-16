@@ -3,8 +3,10 @@
 //
 // The page-side script (snapshotCaptureJS) only reports: the document's HTML, its style sheets (the readable ones as text) and its base URL. Everything
 // that makes it safe is done HERE, in Go, on a parsed tree, because a hostile page can tamper with its own JavaScript. The rules:
-//   - elements that run or load code are dropped (script, noscript, iframe, frame, object, embed, applet, base, meta, link, style, template, svg script
-//     and foreignObject), every on* attribute and the attributes that navigate or submit are dropped;
+//   - elements that run or load code are dropped (script, noscript, frame, applet, base, meta, link, style, template, svg script and foreignObject),
+//     every on* attribute and the attributes that navigate or submit are dropped;
+//   - an iframe, object or embed (the usual home of a player) is replaced by an inert stand-in, <div data-cinqo-tag="iframe">, that keeps only what a
+//     person needs to pick it and what a CSS selector can name (id, class, role, title, data-*, a numeric size) and nothing that loads or runs (plan 15);
 //   - every address is made absolute against the page and only http(s) survives (data: only for images); a link keeps its address in data-href and
 //     its href becomes "#", so a click can never leave the view;
 //   - the style sheets are inlined (the unreadable cross-origin ones stay a remote <link>), @import is dropped;
@@ -119,9 +121,21 @@ func cleanCSS(css string, base *url.URL) string {
 
 // droppedElements are matched by lower-cased name, because the parser keeps the case of svg elements (foreignObject) and gives them no atom.
 var droppedElements = map[string]bool{
-	"script": true, "noscript": true, "iframe": true, "frame": true, "frameset": true, "object": true, "embed": true,
+	"script": true, "noscript": true, "frame": true, "frameset": true,
 	"applet": true, "base": true, "meta": true, "link": true, "style": true, "template": true, "foreignobject": true,
 }
+
+// standInElements are replaced by an inert <div data-cinqo-tag="name"> (see standIn), so a person can pick a player and the selector made from the pick
+// still names the real element (the Browser's list-links runs it on the live page, where it is an iframe).
+var standInElements = map[string]bool{"iframe": true, "object": true, "embed": true}
+
+var (
+	sizeValueRe = regexp.MustCompile(`^[0-9]{1,5}(px|%)?$`)
+	dataAttrRe  = regexp.MustCompile(`^data-[a-z0-9_.:-]{1,60}$`)
+)
+
+// standInCSS gives a stand-in a visible box; :where() keeps its specificity at zero so any rule of the page itself wins.
+const standInCSS = `:where([data-cinqo-tag]){display:block;box-sizing:border-box;min-height:96px;padding:8px;border:2px dashed #94a3b8;background:#f1f5f9;color:#475569;font:12px/1.4 system-ui,sans-serif;text-align:center}:where([data-cinqo-tag])::before{content:"embedded " attr(data-cinqo-tag)}`
 
 var droppedAttributes = map[string]bool{
 	"srcdoc": true, "action": true, "formaction": true, "ping": true, "target": true, "integrity": true, "nonce": true, "http-equiv": true,
@@ -273,13 +287,57 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// sanitizeTree removes every dropped element below n and cleans the rest.
-func sanitizeTree(n *html.Node, base *url.URL) {
+// standIn makes the inert replacement of an iframe, object or embed: a div with no children that keeps id, class, role, title, style, data-* and a numeric
+// width/height, and carries the real element's name in data-cinqo-tag (set here, never taken from the page). Everything else (src, srcdoc, sandbox, allow,
+// name, handlers, the fallback content) is left behind.
+func standIn(c *html.Node, base *url.URL) *html.Node {
+	div := elementNode(atom.Div)
+	size := ""
+	for _, a := range c.Attr {
+		if a.Namespace != "" {
+			continue
+		}
+		key := strings.ToLower(a.Key)
+		switch {
+		case key == "id", key == "class", key == "role", key == "title", key == "style":
+			div.Attr = append(div.Attr, html.Attribute{Key: key, Val: a.Val})
+		case dataAttrRe.MatchString(key):
+			div.Attr = append(div.Attr, html.Attribute{Key: key, Val: a.Val})
+		case key == "width" || key == "height":
+			v := strings.TrimSpace(a.Val)
+			if sizeValueRe.MatchString(v) {
+				if v[len(v)-1] >= '0' && v[len(v)-1] <= '9' {
+					v += "px"
+				}
+				size += key + ":" + v + ";"
+			}
+		}
+	}
+	cleanElement(div, base) // the same attribute rules as every element (style addresses, data-src, data-cinqo-* ...)
+	if size != "" {
+		// the presentational size goes first: a style the page wrote itself wins over it, as it would over width/height attributes
+		setAttr(div, "style", size+attrValue(div, "style"))
+	}
+	setAttr(div, "data-cinqo-tag", strings.ToLower(c.Data))
+	return div
+}
+
+// sanitizeTree removes every dropped element below n, replaces the stand-in elements and cleans the rest. It returns how many stand-ins it made.
+func sanitizeTree(n *html.Node, base *url.URL) int {
+	made := 0
 	for c := n.FirstChild; c != nil; {
 		next := c.NextSibling
 		if c.Type == html.ElementNode {
-			if droppedElements[strings.ToLower(c.Data)] {
+			name := strings.ToLower(c.Data)
+			if droppedElements[name] {
 				n.RemoveChild(c)
+				c = next
+				continue
+			}
+			if standInElements[name] {
+				n.InsertBefore(standIn(c, base), c)
+				n.RemoveChild(c)
+				made++
 				c = next
 				continue
 			}
@@ -290,9 +348,10 @@ func sanitizeTree(n *html.Node, base *url.URL) {
 			c = next
 			continue
 		}
-		sanitizeTree(c, base)
+		made += sanitizeTree(c, base)
 		c = next
 	}
+	return made
 }
 
 func findElement(n *html.Node, a atom.Atom) *html.Node {
@@ -328,7 +387,7 @@ func buildSnapshotHTML(capture snapshotCapture, finalURL string) (out string, tr
 	if err != nil {
 		return "", false, fmt.Errorf("the page could not be parsed: %w", err)
 	}
-	sanitizeTree(doc, base)
+	standIns := sanitizeTree(doc, base)
 	head := findElement(doc, atom.Head)
 	if head == nil {
 		return "", false, fmt.Errorf("the page has no head")
@@ -371,6 +430,11 @@ func buildSnapshotHTML(capture snapshotCapture, finalURL string) (out string, tr
 		st := elementNode(atom.Style, html.Attribute{Key: "data-cinqo-sheets", Val: "1"})
 		st.AppendChild(&html.Node{Type: html.RawNode, Data: strings.ReplaceAll(inlined.String(), "</", `<\/`)})
 		add(st)
+	}
+	if standIns > 0 {
+		sc := elementNode(atom.Style, html.Attribute{Key: "data-cinqo-standin", Val: "1"})
+		sc.AppendChild(&html.Node{Type: html.RawNode, Data: standInCSS})
+		add(sc)
 	}
 
 	var buf bytes.Buffer

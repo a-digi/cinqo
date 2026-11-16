@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -233,7 +234,7 @@ func TestDomainsHandlerRejectsBadRequests(t *testing.T) {
 func TestManifestDeclaresTheDomainsRoutesWithTheirScope(t *testing.T) {
 	want := map[string]bool{"GET domains": false, "DELETE domains": false, "POST domains/clear": false}
 	for _, r := range readManifest(t) {
-		key := r["method"] + " " + r["path_suffix"]
+		key := fmt.Sprint(r["method"]) + " " + fmt.Sprint(r["path_suffix"])
 		if _, ok := want[key]; ok {
 			if r["required_scope"] != "tool:browser:crawl" {
 				t.Errorf("%s: scope %q", key, r["required_scope"])
