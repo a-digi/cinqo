@@ -15,7 +15,7 @@ func TestOnlyTheChromeDrivingRoutesTakeASessionSlot(t *testing.T) {
 	wrapped := map[string]bool{
 		"/crawl": true, "/find-login-elements": true, "/extract": true, "/crawl-paginated": true, "/find-repeating-items": true,
 		"/fetch-links": true, "/fetch-detail-candidates": true, "/diagnose-url": true, "/engine-test": true,
-		"/list-links": true, "/fetch-frames": true, "/capture-network": true, "/page-archive": true, // Namako step 1: evidence routes drive Chrome
+		"/list-links": true, "/fetch-frames": true, "/find-clickables": true, "/capture-network": true, "/page-archive": true, // Namako step 1: evidence routes drive Chrome
 	}
 	seen := map[string]bool{}
 	for _, line := range strings.Split(string(raw), "\n") {

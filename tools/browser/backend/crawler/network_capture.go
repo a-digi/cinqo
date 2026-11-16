@@ -56,13 +56,18 @@ type NetworkResult struct {
 	Truncated bool           `json:"truncated"`
 	Played    bool           `json:"played"`
 	Popups    int            `json:"popupsClosed"`
+	// What became of each step of a page recipe (empty when none was given).
+	Steps []StepOutcome `json:"steps,omitempty"`
 }
 
 type captureNetworkRequest struct {
 	URL         string `json:"url"`
 	WaitMs      int    `json:"waitMs,omitempty"`
 	Interaction string `json:"interaction,omitempty"`
-	RequestID   string `json:"requestId,omitempty"`
+	// A page recipe (plan 17): presses that make the player start. Run before the play script, which still runs after it unless PlayAfter is false.
+	Steps     []RecipeStep `json:"steps,omitempty"`
+	PlayAfter *bool        `json:"playAfter,omitempty"`
+	RequestID string       `json:"requestId,omitempty"`
 }
 
 // classifyMedia says what kind of media request this is ("" = not media). The address (without its query), the response type and Chrome's own
@@ -234,7 +239,7 @@ func CaptureNetworkHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, "url is required (and only url, waitMs, interaction and requestId are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, waitMs, interaction, steps, playAfter and requestId are accepted)", http.StatusBadRequest)
 		return
 	}
 	if req.WaitMs < 0 {
@@ -243,6 +248,10 @@ func CaptureNetworkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Interaction != "" && req.Interaction != "none" && req.Interaction != "play" {
 		http.Error(w, `interaction must be "none" or "play"`, http.StatusBadRequest)
+		return
+	}
+	if err := validateRecipe(req.Steps); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := validateCrawlURL(req.URL); err != nil {
@@ -270,7 +279,15 @@ func captureNetworkOn(ctx context.Context, ep *evidencePage, log *networkLog, re
 	wait := time.Duration(clampInt(req.WaitMs, defaultNetworkWaitMs, maxNetworkWaitMs)) * time.Millisecond
 	played := false
 	popups := 0
-	if req.Interaction == "play" {
+	var steps []StepOutcome
+	if len(req.Steps) > 0 {
+		var err error
+		steps, popups, err = runRecipe(ctx, ep, req.Steps)
+		if err != nil {
+			return NetworkResult{}, err
+		}
+	}
+	if req.Interaction == "play" && (req.PlayAfter == nil || *req.PlayAfter) {
 		sleepStep := 500 * time.Millisecond
 		if err := sleepCtx(ctx, sleepStep); err != nil {
 			return NetworkResult{}, err
@@ -285,15 +302,15 @@ func captureNetworkOn(ctx context.Context, ep *evidencePage, log *networkLog, re
 			return NetworkResult{}, err
 		}
 	}
-	if req.Interaction == "play" {
-		popups = closeOwnPopups(ep)
+	if req.Interaction == "play" || len(req.Steps) > 0 {
+		popups += closeOwnPopups(ep)
 	}
 	entries, truncated, seen := log.entries()
 	final := req.URL
 	if info, err := ep.P.Info(); err == nil && info != nil {
 		final = info.URL
 	}
-	return NetworkResult{URL: req.URL, FinalURL: final, Entries: entries, Requests: seen, Truncated: truncated, Played: played, Popups: popups}, nil
+	return NetworkResult{URL: req.URL, FinalURL: final, Entries: entries, Requests: seen, Truncated: truncated, Played: played, Popups: popups, Steps: steps}, nil
 }
 
 // closeOwnPopups closes the tabs THIS page opened (a click that opens a popup or an ad tab): only targets whose opener is this page, never another

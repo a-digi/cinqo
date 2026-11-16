@@ -116,6 +116,7 @@ func runHTTPServer() {
 	http.HandleFunc("/fetch-links", chromeproc.LimitSessions(crawler.FetchLinksHandler))
 	// Namako step 1: evidence routes. The Chrome ones are limited like every crawl; media and file routes use no browser.
 	http.HandleFunc("/fetch-frames", chromeproc.LimitSessions(crawler.FetchFramesHandler))
+	http.HandleFunc("/find-clickables", chromeproc.LimitSessions(crawler.FindClickablesHandler))
 	http.HandleFunc("/capture-network", chromeproc.LimitSessions(crawler.CaptureNetworkHandler))
 	http.HandleFunc("/list-links", chromeproc.LimitSessions(crawler.ListLinksHandler))
 	http.HandleFunc("/fetch-manifest", crawler.FetchManifestHandler)
