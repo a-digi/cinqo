@@ -58,6 +58,8 @@ type NetworkResult struct {
 	Popups    int            `json:"popupsClosed"`
 	// What became of each step of a page recipe (empty when none was given).
 	Steps []StepOutcome `json:"steps,omitempty"`
+	// The frames the page has after the presses, when asked for (Frames in the request): a player often gets its frame address only after a press.
+	Frames []FrameAfter `json:"frames,omitempty"`
 }
 
 type captureNetworkRequest struct {
@@ -68,6 +70,10 @@ type captureNetworkRequest struct {
 	Steps     []RecipeStep `json:"steps,omitempty"`
 	PlayAfter *bool        `json:"playAfter,omitempty"`
 	RequestID string       `json:"requestId,omitempty"`
+	// Frames asks for the list of frames the page has after the presses (see FrameAfter).
+	Frames bool `json:"frames,omitempty"`
+	// Referer is the address of the page this address was found in (an embed address opened on its own): sent as the navigation's referrer. http or https only.
+	Referer string `json:"referer,omitempty"`
 }
 
 // classifyMedia says what kind of media request this is ("" = not media). The address (without its query), the response type and Chrome's own
@@ -239,7 +245,7 @@ func CaptureNetworkHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, "url is required (and only url, waitMs, interaction, steps, playAfter and requestId are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, waitMs, interaction, steps, playAfter, frames, referer and requestId are accepted)", http.StatusBadRequest)
 		return
 	}
 	if req.WaitMs < 0 {
@@ -258,6 +264,10 @@ func CaptureNetworkHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateReferer(req.Referer); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	res, err := runEvidence(r.Context(), req.RequestID, func(ctx context.Context) (any, error) {
 		return captureNetwork(ctx, req)
 	})
@@ -266,7 +276,7 @@ func CaptureNetworkHandler(w http.ResponseWriter, r *http.Request) {
 
 func captureNetwork(ctx context.Context, req captureNetworkRequest) (NetworkResult, error) {
 	log := newNetworkLog()
-	ep, err := openEvidencePage(ctx, req.URL, req.RequestID, log.requestSent, log.responseReceived, log.finished, log.webSocket)
+	ep, err := openEvidencePageFrom(ctx, req.URL, req.RequestID, req.Referer, log.requestSent, log.responseReceived, log.finished, log.webSocket)
 	if err != nil {
 		return NetworkResult{}, err
 	}
@@ -280,6 +290,10 @@ func captureNetworkOn(ctx context.Context, ep *evidencePage, log *networkLog, re
 	played := false
 	popups := 0
 	var steps []StepOutcome
+	var baseline []FrameAfter
+	if req.Frames {
+		baseline = listFrames(ep)
+	}
 	if len(req.Steps) > 0 {
 		var err error
 		steps, popups, err = runRecipe(ctx, ep, req.Steps)
@@ -310,7 +324,11 @@ func captureNetworkOn(ctx context.Context, ep *evidencePage, log *networkLog, re
 	if info, err := ep.P.Info(); err == nil && info != nil {
 		final = info.URL
 	}
-	return NetworkResult{URL: req.URL, FinalURL: final, Entries: entries, Requests: seen, Truncated: truncated, Played: played, Popups: popups, Steps: steps}, nil
+	var frames []FrameAfter
+	if req.Frames {
+		frames = arrangeFrames(listFrames(ep), baseline)
+	}
+	return NetworkResult{URL: req.URL, FinalURL: final, Entries: entries, Requests: seen, Truncated: truncated, Played: played, Popups: popups, Steps: steps, Frames: frames}, nil
 }
 
 // closeOwnPopups closes the tabs THIS page opened (a click that opens a popup or an ad tab): only targets whose opener is this page, never another

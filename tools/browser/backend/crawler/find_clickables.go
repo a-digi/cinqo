@@ -77,6 +77,8 @@ type findClickablesRequest struct {
 	URL       string `json:"url"`
 	WaitMs    int    `json:"waitMs,omitempty"`
 	RequestID string `json:"requestId,omitempty"`
+	// Referer is the address of the page this address was found in (an embed address read on its own); see captureNetworkRequest.Referer.
+	Referer string `json:"referer,omitempty"`
 }
 
 // clickablesScript lists the candidates. It only reads: no event is dispatched and nothing is focused or scrolled.
@@ -299,7 +301,7 @@ func FindClickablesHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBodySize))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, "url is required (and only url, waitMs and requestId are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, waitMs, referer and requestId are accepted)", http.StatusBadRequest)
 		return
 	}
 	if req.WaitMs < 0 {
@@ -307,6 +309,10 @@ func FindClickablesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateCrawlURL(req.URL); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateReferer(req.Referer); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -318,7 +324,7 @@ func FindClickablesHandler(w http.ResponseWriter, r *http.Request) {
 
 // findClickables opens the page, lets it settle, and reads what can be pressed. Nothing is pressed.
 func findClickables(ctx context.Context, req findClickablesRequest) (ClickablesResult, error) {
-	ep, err := openEvidencePage(ctx, req.URL, req.RequestID)
+	ep, err := openEvidencePageFrom(ctx, req.URL, req.RequestID, req.Referer)
 	if err != nil {
 		return ClickablesResult{}, err
 	}

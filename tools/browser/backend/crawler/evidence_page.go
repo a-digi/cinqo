@@ -33,6 +33,12 @@ func (e *evidencePage) Close() {
 // openEvidencePage opens rawURL and waits for it to load and settle. handlers are extra CDP event handlers (func(*proto.NetworkRequestWillBeSent) …)
 // that are subscribed before the navigation. The caller has already validated the URL with validateCrawlURL.
 func openEvidencePage(ctx context.Context, rawURL, requestID string, handlers ...any) (*evidencePage, error) {
+	return openEvidencePageFrom(ctx, rawURL, requestID, "", handlers...)
+}
+
+// openEvidencePageFrom is openEvidencePage that navigates with a referrer (the page the address was found on): an embed player often plays only when its parent page
+// is the referrer. An empty referrer is a plain navigation.
+func openEvidencePageFrom(ctx context.Context, rawURL, requestID, referer string, handlers ...any) (*evidencePage, error) {
 	slots := rodPageSlots()
 	select {
 	case slots <- struct{}{}:
@@ -83,7 +89,7 @@ func openEvidencePage(ctx context.Context, rawURL, requestID string, handlers ..
 
 	seedStoredClearanceRod(p, rawURL)
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL+" (evidence)")
-	if err := p.Navigate(rawURL); err != nil {
+	if err := navigateWithReferrer(p, rawURL, referer); err != nil {
 		closeAll()
 		return nil, rodNavigationError(ctx, err)
 	}
@@ -146,4 +152,19 @@ func loadWaitIsFatal(ctx context.Context, err error) bool {
 		return true
 	}
 	return !strings.Contains(err.Error(), "Object reference chain is too long")
+}
+
+// navigateWithReferrer is rod's Navigate that can send a referrer. The referrer is the address the page being opened was found on, never a header a caller makes up.
+func navigateWithReferrer(p *rod.Page, rawURL, referer string) error {
+	if referer == "" {
+		return p.Navigate(rawURL)
+	}
+	res, err := proto.PageNavigate{URL: rawURL, Referrer: referer}.Call(p)
+	if err != nil {
+		return err
+	}
+	if res.ErrorText != "" {
+		return &rod.NavigationError{Reason: res.ErrorText}
+	}
+	return nil
 }

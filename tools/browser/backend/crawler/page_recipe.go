@@ -55,6 +55,8 @@ type StepOutcome struct {
 	Do     string `json:"do"`
 	Status string `json:"status"` // done, skipped, stopped, not run
 	Note   string `json:"note,omitempty"`
+	// Popups is how many tabs this step made the page open (an ad, usually); they were closed at once. Zero is left out.
+	Popups int `json:"popups,omitempty"`
 }
 
 // validateRecipe checks the whole recipe before anything runs.
@@ -210,7 +212,8 @@ func runRecipe(ctx context.Context, ep *evidencePage, steps []RecipeStep) (out [
 				}
 			}
 		}
-		popups += closeOwnPopups(ep)
+		o.Popups = closeOwnPopups(ep)
+		popups += o.Popups
 		out = append(out, o)
 		if now := topAddress(ep); start != "" && now != "" && now != start {
 			out[len(out)-1].Status, out[len(out)-1].Note = stepStopped, outcomeLeftTheTop

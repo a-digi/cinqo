@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -130,7 +131,7 @@ func TestARecipeStartsAPlayerInsideAnotherSitesFrame(t *testing.T) {
 	if !hasManifest(res, "b.localhost:"+port+"/cross/live.m3u8") {
 		t.Fatalf("the press inside the cross-site frame must start the stream: %+v", res)
 	}
-	want := []StepOutcome{{1, "click", "done", ""}, {2, "wait", "done", ""}, {3, "clickFrame", "done", ""}}
+	want := []StepOutcome{{Index: 1, Do: "click", Status: "done"}, {Index: 2, Do: "wait", Status: "done"}, {Index: 3, Do: "clickFrame", Status: "done"}}
 	if len(res.Steps) != 3 {
 		t.Fatalf("%+v", res.Steps)
 	}
@@ -200,6 +201,26 @@ func TestPopupsOpenedByAPressAreClosedAndCounted(t *testing.T) {
 	}
 	if res.Steps[0].Status != "done" {
 		t.Errorf("%+v", res.Steps)
+	}
+	total := 0
+	for _, st := range res.Steps {
+		total += st.Popups
+	}
+	if res.Steps[0].Popups < 1 || total != res.Popups {
+		t.Errorf("the press that opened the tab says so, and the steps add up to the total (%d): %+v", res.Popups, res.Steps)
+	}
+}
+
+func TestAStepThatOpenedNoTabSaysNothingAboutPopups(t *testing.T) {
+	requireRodChrome(t)
+	port := recipeMock(t)
+	res := capture(t, "http://a.localhost:"+port+"/vjs", captureNetworkRequest{Steps: []RecipeStep{{Do: "wait", Ms: 50}}})
+	if res.Steps[0].Popups != 0 || res.Popups != 0 {
+		t.Errorf("%+v", res)
+	}
+	raw, err := json.Marshal(res.Steps[0])
+	if err != nil || strings.Contains(string(raw), "popups") {
+		t.Errorf("zero is left out of the answer: %s %v", raw, err)
 	}
 }
 
